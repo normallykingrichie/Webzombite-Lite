@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Webzombite-Lite (Beta) - XKing</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="hud" hidden>
+  <div id="cross"></div>
+  <div id="info"></div>
+  <canvas id="mini" width="170" height="170" aria-label="Peta Mini"></canvas>
+  <div id="altHint">
+    <span>Mode tanpa kunci mouse: gunakan Tombol Panah untuk menoleh &middot; P = Jeda</span>
+    <button type="button" class="btn sm" id="bTryLock">Kunci Mouse</button>
+  </div>
+  <div id="prompt"></div>
+  <div id="eat"><i></i><span></span></div>
+  <div id="held"></div>
+  <div id="stats"></div>
+  <div id="status"></div>
+  <div id="hotbar"></div>
+  <div id="feed"></div>
+  <div id="vig"></div>
+  <div id="dark"></div>
+</div>
+
+<div id="inv" class="panel" hidden></div>
+<div id="screen" class="screen"><div class="card"><h1><b>Webzombite</b>-Lite</h1><p id="ld">Memuat dunia 3D...</p></div></div>
+
+<script>
+(function () {
+  function show(m) {
+    var s = document.getElementById('screen');
+    if (!s) return;
+    s.hidden = false;
+    s.innerHTML = '<div class="card"><h1><b>Webzombite</b>-Lite</h1><p>Terjadi kesalahan saat memuat permainan.</p><pre style="white-space:pre-wrap;font-size:12px;opacity:.85">' + String(m).replace(/</g, '&lt;') + '</pre></div>';
+  }
+  window.__wzShowErr = show;
+  window.addEventListener('error', function (e) {
+    var t = e.target;
+    if (t && t.tagName === 'SCRIPT') {
+      var src = t.getAttribute('src') || '';
+      if (src.indexOf('three.min.js') >= 0) return;
+      show('Gagal memuat file: ' + src + '\nPastikan seluruh file sudah berada di folder yang sama dengan index.html.');
+    } else if (!t || t === window) {
+      show((e.message || 'Kesalahan Skrip') + (e.filename ? '\n' + e.filename.split('/').pop() + ':' + e.lineno : ''));
+    }
+  }, true);
+  setTimeout(function () {
+    if (!window.WZ || !window.WZ.started) {
+      show('Permainan belum merespons. Tekan F12 lalu periksa tab Console untuk melihat detail error.');
+    }
+  }, 10000);
+})();
+</script>
+
+<script src="vendor/three.min.js"></script>
+<script>
+(function () {
+  function loadFiles() {
+    var files = ['config.js', 'data.js', 'world.js', 'net.js', 'game.js'];
+    function next(i) {
+      if (i >= files.length) return;
+      var s = document.createElement('script');
+      s.src = files[i];
+      s.onload = function () { next(i + 1); };
+      s.onerror = function () {
+        if (window.__wzShowErr) window.__wzShowErr('Gagal memuat file: ' + files[i]);
+      };
+      document.body.appendChild(s);
+    }
+    next(0);
+  }
+  if (window.THREE) {
+    loadFiles();
+  } else {
+    var cdn = document.createElement('script');
+    cdn.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+    cdn.onload = loadFiles;
+    cdn.onerror = function () {
+      if (window.__wzShowErr) window.__wzShowErr('Gagal memuat Three.js (vendor lokal maupun CDN). Periksa koneksi internet Anda.');
+    };
+    document.body.appendChild(cdn);
+  }
+})();
+</script>
+</body>
+</html>
