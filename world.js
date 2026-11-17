@@ -1,4 +1,4 @@
-/* AWAL world.js - Webzombite-Lite */
+/* AWAL world.js - Webzombite-Lite (Tekstur Tajam + Siklus Pagi/Siang/Sore/Malam) */
 (function (WZ) {
   'use strict';
   WZ.HALF = 250; WZ.SPAWN_HALF = 262.5;
@@ -10,8 +10,8 @@
       return ((t ^ t >>> 14) >>> 0) / 4294967296;
     };
   }
-  WZ.createWorld = function (THREE, scene) {
-    var R = mulberry(20261116);
+  WZ.createWorld = function (THREE, scene, maxAniso) {
+    var R = mulberry(20261116), ANISO = Math.min(4, maxAniso || 4);
     function rr(a, b) { return a + R() * (b - a); }
     function pick(a) { return a[(R() * a.length) | 0]; }
     var W = { half: WZ.HALF, ents: [], trees: [], rocks: [], piles: [], crates: [], furn: [], rects: [], roads: [], spawn: { x: -32, y: 0, z: 32 } };
@@ -73,9 +73,10 @@
     var box1 = new THREE.BoxGeometry(1, 1, 1), boxB = new THREE.BoxGeometry(1, 1, 1); boxB.translate(0, 0.5, 0);
     function lam(c, o) { var p = { color: c }; for (var k in (o || {})) p[k] = o[k]; return new THREE.MeshLambertMaterial(p); }
 
+    /* ---------------- Tekstur Tajam & Detail ---------------- */
     function canvasTex(w, h, draw) {
       var c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
-      var t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 1;
+      var t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = ANISO;
       if ('SRGBColorSpace' in THREE) t.colorSpace = THREE.SRGBColorSpace; else if ('sRGBEncoding' in THREE) t.encoding = THREE.sRGBEncoding;
       return t;
     }
@@ -83,38 +84,78 @@
       var r = mulberry(seed);
       return canvasTex(128, 128, function (g, w, h) {
         g.fillStyle = base; g.fillRect(0, 0, w, h);
-        for (var i = 0; i < 180; i++) { g.fillStyle = 'rgba(0,0,0,' + (r() * 0.07) + ')'; g.fillRect(r() * w, r() * h, 2 + r() * 14, 2 + r() * 10); }
+        for (var y = 0; y < h; y += 16) { g.fillStyle = 'rgba(0,0,0,.14)'; g.fillRect(0, y, w, 1); g.fillStyle = 'rgba(255,255,255,.08)'; g.fillRect(0, y + 1, w, 1); }
+        for (var i = 0; i < 320; i++) { g.fillStyle = r() < 0.5 ? 'rgba(0,0,0,.12)' : 'rgba(255,255,255,.07)'; g.fillRect(r() * w, r() * h, 2 + r() * 8, 1 + r() * 4); }
         for (var fy = 0; fy < 2; fy++) for (var fx = 0; fx < 2; fx++) {
-          var x = fx * 64 + 14, y = fy * 64 + 10, k = r();
-          g.fillStyle = k < 0.18 ? '#4a3a2c' : k < 0.3 ? '#1d252b' : '#26323b'; g.fillRect(x, y, 36, 44);
-          if (k < 0.18) { g.strokeStyle = '#2a1f17'; g.lineWidth = 3; for (var j = 0; j < 4; j++) { g.beginPath(); g.moveTo(x, y + j * 12 + 4); g.lineTo(x + 36, y + j * 12 + 10); g.stroke(); } }
-          else if (k > 0.65) { g.strokeStyle = 'rgba(210,225,235,.55)'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(x + 6, y); g.lineTo(x + 22, y + 24); g.lineTo(x + 36, y + 14); g.moveTo(x + 22, y + 24); g.lineTo(x + 12, y + 44); g.stroke(); }
-          g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(x, y + 40, 36, 4);
+          var x = fx * 64 + 13, wy = fy * 64 + 9, k = r();
+          g.fillStyle = '#242220'; g.fillRect(x - 2, wy - 2, 40, 48);
+          g.fillStyle = k < 0.18 ? '#59422f' : k < 0.32 ? '#1a232a' : '#2e4554'; g.fillRect(x, wy, 36, 44);
+          if (k < 0.18) { g.strokeStyle = '#2d1e12'; g.lineWidth = 3; for (var j = 0; j < 4; j++) { g.beginPath(); g.moveTo(x, wy + j * 11 + 4); g.lineTo(x + 36, wy + j * 11 + 9); g.stroke(); } }
+          else { g.fillStyle = 'rgba(180,220,245,.22)'; g.fillRect(x + 3, wy + 3, 12, 34); g.fillStyle = '#1b1d1e'; g.fillRect(x + 17, wy, 2, 44); g.fillRect(x, wy + 21, 36, 2); }
+          g.fillStyle = 'rgba(255,255,255,.2)'; g.fillRect(x - 2, wy + 44, 40, 3);
         }
-        var gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(30,22,10,.28)'); g.fillStyle = gr; g.fillRect(0, 0, w, h);
       });
     }
-    var FACADE_MATS = [['#8d8a82', 11], ['#9a9184', 12], ['#7b8187', 13], ['#8f7f72', 14], ['#6f7679', 15], ['#a39b8c', 16]].map(function (a) { return lam(0xffffff, { map: facadeTex(a[0], a[1]) }); });
+    var FACADE_MATS = [['#9e9a91', 11], ['#a89e90', 12], ['#878e96', 13], ['#9e8b7c', 14], ['#7c858a', 15], ['#b2a896', 16]].map(function (a) { return lam(0xffffff, { map: facadeTex(a[0], a[1]) }); });
     var groundTex = canvasTex(256, 256, function (g, w, h) {
-      var r = mulberry(5); g.fillStyle = '#5b5a44'; g.fillRect(0, 0, w, h);
-      for (var i = 0; i < 1800; i++) { var v = (r() * 40) | 0; g.fillStyle = 'rgba(' + (60 + v) + ',' + (62 + v) + ',' + (40 + v / 2) + ',.55)'; g.fillRect(r() * w, r() * h, 1 + r() * 4, 1 + r() * 4); }
-    }); groundTex.repeat.set(120, 120);
+      var r = mulberry(5); g.fillStyle = '#5c6142'; g.fillRect(0, 0, w, h);
+      for (var i = 0; i < 2200; i++) { var v = (r() * 48) | 0; g.fillStyle = r() < 0.3 ? 'rgba(65,55,38,.45)' : 'rgba(' + (72 + v) + ',' + (84 + v) + ',' + (45 + (v >> 1)) + ',.7)'; g.fillRect(r() * w, r() * h, 1 + r() * 3, 1 + r() * 5); }
+      for (var j = 0; j < 260; j++) { g.fillStyle = '#737d4b'; g.fillRect(r() * w, r() * h, 1, 4 + r() * 4); }
+    }); groundTex.repeat.set(130, 130);
     var roadTex = canvasTex(128, 128, function (g, w, h) {
-      var r = mulberry(6); g.fillStyle = '#34363a'; g.fillRect(0, 0, w, h);
-      for (var i = 0; i < 900; i++) { var v = (r() * 30) | 0; g.fillStyle = 'rgba(' + (50 + v) + ',' + (52 + v) + ',' + (56 + v) + ',.6)'; g.fillRect(r() * w, r() * h, 1 + r() * 3, 1 + r() * 3); }
-      g.strokeStyle = 'rgba(15,15,15,.6)'; g.lineWidth = 1; for (var k = 0; k < 4; k++) { g.beginPath(); g.moveTo(r() * w, 0); g.lineTo(r() * w, h); g.stroke(); }
+      var r = mulberry(6); g.fillStyle = '#383b40'; g.fillRect(0, 0, w, h);
+      for (var i = 0; i < 1600; i++) { var v = (r() * 42) | 0; g.fillStyle = 'rgba(' + (42 + v) + ',' + (45 + v) + ',' + (50 + v) + ',.75)'; g.fillRect(r() * w, r() * h, 1 + r() * 2, 1 + r() * 2); }
+      g.strokeStyle = 'rgba(12,12,14,.8)'; g.lineWidth = 1.2; for (var k = 0; k < 5; k++) { g.beginPath(); var sx = r() * w; g.moveTo(sx, 0); g.lineTo(sx + (r() - 0.5) * 18, h * 0.5); g.lineTo(sx + (r() - 0.5) * 24, h); g.stroke(); }
     });
-    var plankTex = canvasTex(64, 64, function (g, w, h) {
-      g.fillStyle = '#8a6238'; g.fillRect(0, 0, w, h); g.strokeStyle = '#5b3d1f'; g.lineWidth = 2;
-      for (var y = 0; y < h; y += 16) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
+    var plankTex = canvasTex(128, 128, function (g, w, h) {
+      var r = mulberry(7); g.fillStyle = '#9c6e3b'; g.fillRect(0, 0, w, h);
+      for (var p = 0; p < 4; p++) {
+        var py = p * 32; g.fillStyle = p % 2 ? '#946736' : '#a37542'; g.fillRect(0, py + 2, w, 28);
+        g.fillStyle = 'rgba(255,220,175,.18)'; g.fillRect(0, py + 2, w, 2);
+        for (var i = 0; i < 18; i++) { g.fillStyle = 'rgba(55,32,12,' + (0.1 + r() * 0.2) + ')'; g.fillRect(r() * w, py + 4 + r() * 24, 14 + r() * 40, 1 + r() * 2); }
+        g.fillStyle = '#472d14'; g.fillRect(0, py, w, 2); g.fillRect(0, py + 30, w, 2);
+      }
+      g.fillStyle = '#472d14'; g.fillRect(62, 0, 2, 64); g.fillRect(18, 64, 2, 64);
     });
-    var stoneTex = canvasTex(64, 64, function (g, w, h) {
-      g.fillStyle = '#8b8f95'; g.fillRect(0, 0, w, h); g.strokeStyle = '#5f6368'; g.lineWidth = 2; g.strokeRect(1, 1, w - 2, h - 2);
-      for (var i = 0; i < 100; i++) { var v = (R() * 50) | 0; g.fillStyle = 'rgba(' + (110 + v) + ',' + (112 + v) + ',' + (118 + v) + ',.5)'; g.fillRect(R() * w, R() * h, 3, 3); }
+    var stoneTex = canvasTex(128, 128, function (g, w, h) {
+      var r = mulberry(8); g.fillStyle = '#62666d'; g.fillRect(0, 0, w, h);
+      for (var row = 0; row < 4; row++) {
+        var y = row * 32, off = (row % 2) * 32;
+        for (var col = -1; col < 3; col++) {
+          var x = col * 64 + off, sh = 128 + ((r() * 34) | 0);
+          g.fillStyle = 'rgb(' + sh + ',' + (sh + 2) + ',' + (sh + 6) + ')'; g.fillRect(x + 2, y + 2, 60, 28);
+          g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(x + 2, y + 2, 60, 3);
+          g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(x + 2, y + 27, 60, 3);
+        }
+      }
+      for (var i = 0; i < 350; i++) { g.fillStyle = r() < 0.5 ? 'rgba(0,0,0,.2)' : 'rgba(255,255,255,.18)'; g.fillRect(r() * w, r() * h, 2, 2); }
     });
-    var furnTex = canvasTex(64, 64, function (g, w, h) {
-      g.fillStyle = '#3a3633'; g.fillRect(0, 0, w, h); g.fillStyle = '#ff7a1a'; g.fillRect(18, 30, 28, 22); g.fillStyle = '#ffd36a'; g.fillRect(24, 38, 16, 10);
-      g.strokeStyle = '#1b1917'; g.lineWidth = 3; g.strokeRect(2, 2, w - 4, h - 4);
+    var furnTex = canvasTex(128, 128, function (g, w, h) {
+      g.fillStyle = '#4a4642'; g.fillRect(0, 0, w, h); g.strokeStyle = '#24211e'; g.lineWidth = 5; g.strokeRect(3, 3, w - 6, h - 6);
+      g.fillStyle = '#262320'; g.fillRect(28, 52, 72, 58); g.fillStyle = '#ff6a14'; g.fillRect(36, 62, 56, 40); g.fillStyle = '#ffe078'; g.fillRect(48, 76, 32, 22);
+      g.fillStyle = '#736d68'; for (var rx = 14; rx <= 114; rx += 20) { g.fillRect(rx, 14, 4, 4); g.fillRect(rx, 110, 4, 4); }
+    });
+    var houseWallTex = canvasTex(128, 128, function (g, w, h) {
+      var r = mulberry(9); g.fillStyle = '#dad5cc'; g.fillRect(0, 0, w, h);
+      for (var i = 0; i < 420; i++) { g.fillStyle = r() < 0.5 ? 'rgba(0,0,0,.11)' : 'rgba(255,255,255,.12)'; g.fillRect(r() * w, r() * h, 2 + r() * 6, 2 + r() * 4); }
+      g.fillStyle = 'rgba(0,0,0,.12)'; for (var y = 0; y < h; y += 32) g.fillRect(0, y, w, 1);
+    });
+    var barkTex = canvasTex(64, 64, function (g, w, h) {
+      var r = mulberry(10); g.fillStyle = '#6b4d30'; g.fillRect(0, 0, w, h);
+      for (var i = 0; i < 90; i++) { g.fillStyle = r() < 0.5 ? 'rgba(30,18,8,.42)' : 'rgba(150,115,75,.28)'; g.fillRect(r() * w, r() * h, 2 + r() * 2, 8 + r() * 22); }
+    });
+    var leafTex = canvasTex(64, 64, function (g, w, h) {
+      var r = mulberry(12); g.fillStyle = '#b9c2b2'; g.fillRect(0, 0, w, h);
+      for (var i = 0; i < 240; i++) { g.fillStyle = r() < 0.45 ? 'rgba(30,55,25,.38)' : 'rgba(220,240,200,.3)'; g.fillRect(r() * w, r() * h, 2 + r() * 4, 2 + r() * 5); }
+    });
+    var rockTex = canvasTex(64, 64, function (g, w, h) {
+      var r = mulberry(13); g.fillStyle = '#b8bcc2'; g.fillRect(0, 0, w, h);
+      for (var i = 0; i < 260; i++) { g.fillStyle = r() < 0.5 ? 'rgba(30,35,40,.35)' : 'rgba(245,248,255,.32)'; g.fillRect(r() * w, r() * h, 2 + r() * 5, 2 + r() * 4); }
+    });
+    var crateTex = canvasTex(64, 64, function (g, w, h) {
+      g.fillStyle = '#b58852'; g.fillRect(0, 0, w, h); g.strokeStyle = '#4e3418'; g.lineWidth = 4; g.strokeRect(2, 2, w - 4, h - 4);
+      g.beginPath(); g.moveTo(4, 4); g.lineTo(w - 4, h - 4); g.stroke();
+      for (var y = 16; y < h; y += 16) { g.fillStyle = 'rgba(55,34,14,.4)'; g.fillRect(4, y, w - 8, 2); }
     });
 
     var ground = new THREE.Mesh(new THREE.PlaneGeometry(1100, 1100), lam(0xffffff, { map: groundTex }));
@@ -136,7 +177,7 @@
       g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeBoundingSphere();
       scene.add(new THREE.Mesh(g, lam(0xffffff, { map: roadTex })));
     })();
-    var dashes = inst(boxB, lam(0xd9b640), 1400, false);
+    var dashes = inst(boxB, lam(0xe8c448), 1400, false);
     ROADS.forEach(function (c) { for (var t = -255; t < 255; t += 7) { put(dashes, c, 0.03, t, 0.18, 0.01, 3.2, 0, null); put(dashes, t, 0.032, c, 3.2, 0.01, 0.18, 0, null); } });
 
     var occupied = [];
@@ -144,7 +185,7 @@
     function inOcc(x, z, m) { for (var i = 0; i < occupied.length; i++) { var o = occupied[i]; if (x > o[0] - m && x < o[1] + m && z > o[2] - m && z < o[3] + m) return true; } return false; }
     function zoneOf(x, z) { var d = Math.hypot(x, z); return d < 105 ? 'down' : d < 190 ? 'mid' : 'out'; }
 
-    var walls = inst(box1, lam(0xffffff), 2500, false), roofCols = [0x4a4743, 0x55504a, 0x3f4349];
+    var walls = inst(box1, lam(0xffffff, { map: houseWallTex }), 2500, false), roofCols = [0x54504b, 0x615b54, 0x484d54];
     var facadeBuckets = FACADE_MATS.map(function () { return { pos: [], norm: [], uv: [], idx: [] }; });
     var roofBucket = { pos: [], norm: [], col: [], idx: [] };
     function pushSide(bk, p0, p1, p2, p3, nx, ny, nz, ur, vr) {
@@ -162,22 +203,22 @@
       for (var i = 0; i < 4; i++) { roofBucket.norm.push(0, 1, 0); roofBucket.col.push(rc.r, rc.g, rc.b); }
       roofBucket.idx.push(rb, rb + 1, rb + 2, rb, rb + 2, rb + 3);
       addBox(x0, x1, 0, h, z0, z1); occupied.push([x0 - 1, x1 + 1, z0 - 1, z1 + 1]); W.rects.push({ x0: x0, x1: x1, z0: z0, z1: z1, c: '#555' });
-      if (R() < 0.6) put(walls, rr(x0 + 2, x1 - 2), h + 1, rr(z0 + 2, z1 - 2), 3, 2, 3, 0, 0x3b3f44);
+      if (R() < 0.6) put(walls, rr(x0 + 2, x1 - 2), h + 1, rr(z0 + 2, z1 - 2), 3, 2, 3, 0, 0x5c6166);
     }
     function wallSeg(x0, x1, z0, z1, y0, y1, col) { put(walls, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, x1 - x0, y1 - y0, z1 - z0, 0, col); addBox(x0, x1, y0, y1, z0, z1); }
 
-    var bedM = inst(box1, lam(0xffffff), 400, false), couchM = inst(box1, lam(0xffffff), 400, false);
+    var bedM = inst(box1, lam(0xffffff, { map: houseWallTex }), 400, false), couchM = inst(box1, lam(0xffffff, { map: houseWallTex }), 400, false);
     function addBed(x, z, clean) {
-      put(bedM, x, 0.3, z, 2.0, 0.6, 1.0, 0, clean ? 0xd9d3c4 : 0x4a3d33); put(bedM, x - 0.9, 0.65, z, 0.18, 0.5, 1.0, 0, clean ? 0xb98a5a : 0x2e2620);
+      put(bedM, x, 0.3, z, 2.0, 0.6, 1.0, 0, clean ? 0xe5dfd0 : 0x57483d); put(bedM, x - 0.9, 0.65, z, 0.18, 0.5, 1.0, 0, clean ? 0xc89562 : 0x382e26);
       addBox(x - 1.0, x + 1.0, 0, 0.6, z - 0.5, z + 0.5); addEnt({ k: 'bed', x: x, z: z, y: 0, r: 1.3, h: 0.8, clean: clean, alive: true });
     }
     function addCouch(x, z, clean) {
-      put(couchM, x, 0.3, z, 1.9, 0.6, 0.9, 0, clean ? 0x6f8a62 : 0x3d342c); put(couchM, x, 0.75, z - 0.38, 1.9, 0.6, 0.2, 0, clean ? 0x55704a : 0x2a231d);
+      put(couchM, x, 0.3, z, 1.9, 0.6, 0.9, 0, clean ? 0x7b996d : 0x4a4036); put(couchM, x, 0.75, z - 0.38, 1.9, 0.6, 0.2, 0, clean ? 0x5f7d52 : 0x332b24);
       addBox(x - 0.95, x + 0.95, 0, 0.6, z - 0.45, z + 0.45); addEnt({ k: 'couch', x: x, z: z, y: 0, r: 1.15, h: 0.9, clean: clean, alive: true });
     }
     function house(px, pz, face) {
       var hw = rr(12, 15), hd = rr(10, 12), x0 = px - hw / 2, x1 = px + hw / 2, z0 = pz - hd / 2, z1 = pz + hd / 2, t = 0.4, H = 3.2;
-      var col = pick([0xb7ab97, 0xa59a88, 0x9c8f86, 0xbdb4a2, 0x93897c]); occupied.push([x0 - 1, x1 + 1, z0 - 1, z1 + 1]); W.rects.push({ x0: x0, x1: x1, z0: z0, z1: z1, c: '#7a6f60' });
+      var col = pick([0xc7ba9f, 0xb3a895, 0xaa9c92, 0xcac0ae, 0xa19688]); occupied.push([x0 - 1, x1 + 1, z0 - 1, z1 + 1]); W.rects.push({ x0: x0, x1: x1, z0: z0, z1: z1, c: '#7a6f60' });
       var dx = (x0 + x1) / 2 + rr(-hw / 4, hw / 4), dz = (z0 + z1) / 2 + rr(-hd / 4, hd / 4), gap = 1.0;
       [[z0, 'n'], [z1, 's']].forEach(function (s) {
         if (face === s[1]) { wallSeg(x0, dx - gap, s[0] - t / 2, s[0] + t / 2, 0, H, col); wallSeg(dx + gap, x1, s[0] - t / 2, s[0] + t / 2, 0, H, col); wallSeg(dx - gap, dx + gap, s[0] - t / 2, s[0] + t / 2, 2.4, H, col); }
@@ -187,7 +228,7 @@
         if (face === s[1]) { wallSeg(s[0] - t / 2, s[0] + t / 2, z0 + t / 2, dz - gap, 0, H, col); wallSeg(s[0] - t / 2, s[0] + t / 2, dz + gap, z1 - t / 2, 0, H, col); wallSeg(s[0] - t / 2, s[0] + t / 2, dz - gap, dz + gap, 2.4, H, col); }
         else wallSeg(s[0] - t / 2, s[0] + t / 2, z0 + t / 2, z1 - t / 2, 0, H, col);
       });
-      wallSeg(x0, x1, z0, z1, H, H + 0.4, 0x4a4540);
+      wallSeg(x0, x1, z0, z1, H, H + 0.4, 0x5c5650);
       var cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, back = face === 'n' ? 1 : face === 's' ? -1 : 0, backx = face === 'w' ? 1 : face === 'e' ? -1 : 0;
       var bx = cx + (backx ? backx * (hw / 2 - 1.6) : -hw / 4), bz = cz + (back ? back * (hd / 2 - 1.2) : -hd / 4); addBed(bx, bz, R() < 0.5);
       var kx = cx + (backx ? backx * (hw / 2 - 1.2) : hw / 4), kz = cz + (back ? back * (hd / 2 - 1.2) : hd / 4) + (backx ? 3 : 0);
@@ -208,7 +249,7 @@
 
     var trunkG = new THREE.CylinderGeometry(0.22, 0.34, 1, 7); trunkG.translate(0, 0.5, 0);
     var crownG = new THREE.ConeGeometry(1, 1, 8); crownG.translate(0, 0.5, 0);
-    var trunkM = inst(trunkG, lam(0x5b4128), 650, true), crownM = inst(crownG, lam(0xffffff), 650, true);
+    var trunkM = inst(trunkG, lam(0xffffff, { map: barkTex }), 650, true), crownM = inst(crownG, lam(0xffffff, { map: leafTex }), 650, true);
     function treeMat(t, on) {
       if (!on) { put(trunkM, 0, -50, 0, 0.0001, 0.0001, 0.0001, 0, null, t.ix); put(crownM, 0, -50, 0, 0.0001, 0.0001, 0.0001, 0, null, t.ix); return; }
       put(trunkM, t.x, 0, t.z, 1.2 * t.s, t.th, 1.2 * t.s, t.ry, null, t.ix); put(crownM, t.x, t.th * 0.62, t.z, 2.6 * t.s, 3.4 * t.s, 2.6 * t.s, t.ry, t.cc, t.ix);
@@ -216,35 +257,35 @@
     W.setTree = function (t, on) { treeMat(t, on); t.box.on = on; t.alive = on; };
     function addTree(x, z) {
       var s = Math.pow(R(), 1.6) * 1.5 + 0.7, th = 3.0 * s;
-      var t = { k: 'tree', idx: W.trees.length, x: x, z: z, y: 0, s: s, th: th, ry: R() * 6.28, r: 0.55 * s + 0.15, h: th * 0.62 + 3.4 * s, alive: true, max: Math.round(34 * s * s), hp: 0, yield: Math.round(3 + 5.2 * s * s), given: 0, respawn: 0, cc: pick([0x3f5b34, 0x4b6a3a, 0x37502f, 0x5a6b3a, 0x66603a]) };
+      var t = { k: 'tree', idx: W.trees.length, x: x, z: z, y: 0, s: s, th: th, ry: R() * 6.28, r: 0.55 * s + 0.15, h: th * 0.62 + 3.4 * s, alive: true, max: Math.round(34 * s * s), hp: 0, yield: Math.round(3 + 5.2 * s * s), given: 0, respawn: 0, cc: pick([0x4c6e3d, 0x577c43, 0x426137, 0x677a43, 0x736d43]) };
       t.hp = t.max; t.ix = trunkM.count; trunkM.count++; crownM.count++; t.box = addBox(x - 0.3 * s, x + 0.3 * s, 0, th, z - 0.3 * s, z + 0.3 * s);
       treeMat(t, true); addEnt(t); W.trees.push(t);
     }
 
-    var rockG = new THREE.DodecahedronGeometry(1, 0), rockM = inst(rockG, lam(0xffffff, { flatShading: true }), 220, true);
+    var rockG = new THREE.DodecahedronGeometry(1, 0), rockM = inst(rockG, lam(0xffffff, { map: rockTex, flatShading: true }), 220, true);
     W.setRock = function (t, on) {
       if (!on) put(rockM, 0, -50, 0, 0.0001, 0.0001, 0.0001, 0, null, t.ix);
       else put(rockM, t.x, 0.55 * t.s, t.z, 1.15 * t.s, 0.8 * t.s, 1.0 * t.s, t.ry, t.cc, t.ix);
       t.box.on = on; t.alive = on;
     };
     function addRock(x, z, ore) {
-      var s = rr(0.8, 2.1), t = { k: 'rock', idx: W.rocks.length, ore: ore, x: x, z: z, y: 0, s: s, ry: R() * 6.28, r: 0.95 * s, h: 1.5 * s, alive: true, max: Math.round((ore ? 100 : 60) * s * s), yield: ore ? Math.round(2 + 4 * s * s) : Math.round(4 + 6 * s * s), given: 0, respawn: 0, cc: ore ? 0x9a5f3a : 0x7a7d82 };
+      var s = rr(0.8, 2.1), t = { k: 'rock', idx: W.rocks.length, ore: ore, x: x, z: z, y: 0, s: s, ry: R() * 6.28, r: 0.95 * s, h: 1.5 * s, alive: true, max: Math.round((ore ? 100 : 60) * s * s), yield: ore ? Math.round(2 + 4 * s * s) : Math.round(4 + 6 * s * s), given: 0, respawn: 0, cc: ore ? 0xb37044 : 0x8d9198 };
       t.hp = t.max; t.ix = rockM.count++; t.box = addBox(x - 0.8 * s, x + 0.8 * s, 0, 1.2 * s, z - 0.8 * s, z + 0.8 * s);
       W.setRock(t, true); addEnt(t); W.rocks.push(t);
     }
 
-    var pileM = inst(box1, lam(0xffffff), 2800, true), shineM = inst(box1, lam(0xffffff), 1000, true);
+    var pileM = inst(box1, lam(0xffffff, { map: houseWallTex }), 2800, true), shineM = inst(box1, lam(0xffffff), 1000, true);
     W.setPile = function (p, full) { var k = full ? 1 : 0.3; p.parts.forEach(function (q) { put(q.m, p.x + q.dx, q.y * k, p.z + q.dz, q.sx, q.sy * k, q.sz, q.ry, q.col, q.i); }); p.searched = !full; };
     function addPile(x, z, tier) {
       var p = { k: 'pile', idx: W.piles.length, tier: tier, x: x, z: z, y: 0, r: 0.9, h: 0.9, alive: true, searched: false, respawn: 0, parts: [] };
-      var cols = tier === 1 ? [0x5d5a52, 0x6b5f50, 0x4c4a45, 0x70685a] : [0x6c6a64, 0x57595c, 0x7a6e5c, 0x4f4e4b];
+      var cols = tier === 1 ? [0x6d695f, 0x7a6d5c, 0x5c5a54, 0x827868] : [0x7a7871, 0x676a6e, 0x8a7d69, 0x5e5d59];
       for (var i = 0; i < 5; i++) { var q = { m: pileM, dx: rr(-0.5, 0.5), dz: rr(-0.5, 0.5), sx: rr(0.25, 0.7), sy: rr(0.25, 0.6), sz: rr(0.25, 0.7), ry: R() * 3, col: pick(cols) }; q.y = q.sy / 2; q.i = pileM.count++; p.parts.push(q); }
-      if (tier === 2) for (var j = 0; j < 2; j++) { var q2 = { m: shineM, dx: rr(-0.4, 0.4), dz: rr(-0.4, 0.4), sx: 0.18, sy: 0.12, sz: 0.3, ry: R() * 3, col: pick([0xcfd3d8, 0xd6b25a, 0xb5c0c9]) }; q2.y = rr(0.4, 0.7); q2.i = shineM.count++; p.parts.push(q2); }
+      if (tier === 2) for (var j = 0; j < 2; j++) { var q2 = { m: shineM, dx: rr(-0.4, 0.4), dz: rr(-0.4, 0.4), sx: 0.18, sy: 0.12, sz: 0.3, ry: R() * 3, col: pick([0xdde2e8, 0xe8c468, 0xc4d0d9]) }; q2.y = rr(0.4, 0.7); q2.i = shineM.count++; p.parts.push(q2); }
       W.setPile(p, true); addEnt(p); W.piles.push(p);
     }
 
-    var crateM = inst(box1, lam(0xffffff), 250, true), lidM = inst(box1, lam(0x3e2a16), 250, true);
-    W.setCrate = function (c, full) { put(crateM, c.x, full ? 0.45 : 0.3, c.z, 0.9, full ? 0.9 : 0.6, 0.9, c.ry, full ? 0x9a7240 : 0x5f4a30, c.ix); put(lidM, c.x, full ? 0.92 : -5, c.z, 0.98, 0.1, 0.98, c.ry, null, c.ix); c.searched = !full; };
+    var crateM = inst(box1, lam(0xffffff, { map: crateTex }), 250, true), lidM = inst(box1, lam(0x4f361c), 250, true);
+    W.setCrate = function (c, full) { put(crateM, c.x, full ? 0.45 : 0.3, c.z, 0.9, full ? 0.9 : 0.6, 0.9, c.ry, full ? 0xffffff : 0x8a7558, c.ix); put(lidM, c.x, full ? 0.92 : -5, c.z, 0.98, 0.1, 0.98, c.ry, null, c.ix); c.searched = !full; };
     function addCrate(x, z) {
       var c = { k: 'crate', idx: W.crates.length, x: x, z: z, y: 0, r: 0.75, h: 0.9, alive: true, searched: false, respawn: 0, ry: R() * 3 };
       c.ix = crateM.count++; lidM.count++; addBox(x - 0.45, x + 0.45, 0, 0.9, z - 0.45, z + 0.45);
@@ -306,17 +347,17 @@
       if (onRoad(qx, qz, 1) || inOcc(qx, qz, 1) || zoneOf(qx, qz) === 'down') continue;
       addCrate(qx, qz); cr++;
     }
-    var carBody = inst(boxB, lam(0xffffff), 80, false), carTop = inst(boxB, lam(0x2c2f33), 80, false), cars = 0; tries = 0;
+    var carBody = inst(boxB, lam(0xffffff, { map: houseWallTex }), 80, false), carTop = inst(boxB, lam(0x373b40), 80, false), cars = 0; tries = 0;
     while (cars < 55 && tries++ < 600) {
       var vl = pick(ROADS), alongV = rr(-240, 240), lane = (R() < 0.5 ? -1 : 1) * rr(1.2, 3), horiz = R() < 0.5;
       var cxx = horiz ? alongV : vl + lane, czz = horiz ? vl + lane : alongV, lenX = horiz ? 4.4 : 1.9, lenZ = horiz ? 1.9 : 4.4, clash = false;
       for (var ci = 0; ci < W.ents.length && !clash; ci++) { var ee = W.ents[ci]; if (ee.k === 'pile' && Math.abs(ee.x - cxx) < 3 && Math.abs(ee.z - czz) < 3) clash = true; }
       if (clash) continue;
-      put(carBody, cxx, 0.25, czz, lenX, 0.9, lenZ, 0, pick([0x7a2b2b, 0x2b4f7a, 0x6b6b2b, 0x555a5e, 0x8a8a84, 0x3e5e3e]));
+      put(carBody, cxx, 0.25, czz, lenX, 0.9, lenZ, 0, pick([0x943636, 0x386191, 0x808036, 0x676d73, 0x9c9c94, 0x4b704b]));
       put(carTop, cxx, 1.15, czz, horiz ? 2.2 : 1.7, 0.6, horiz ? 1.7 : 2.2, 0, null);
       addBox(cxx - lenX / 2, cxx + lenX / 2, 0, 1.75, czz - lenZ / 2, czz + lenZ / 2); cars++;
     }
-    var postM = inst(boxB, lam(0xb33a2a), 360, false);
+    var postM = inst(boxB, lam(0xc44230), 360, false);
     for (var pt = -250; pt <= 250; pt += 6) { put(postM, pt, 0, -250, 0.25, 1.6, 0.25, 0, null); put(postM, pt, 0, 250, 0.25, 1.6, 0.25, 0, null); put(postM, -250, 0, pt, 0.25, 1.6, 0.25, 0, null); put(postM, 250, 0, pt, 0.25, 1.6, 0.25, 0, null); }
 
     var VM = { 1: inst(box1, lam(0xffffff, { map: plankTex }), 2800, true), 2: inst(box1, lam(0xffffff, { map: stoneTex }), 2800, true), 3: inst(box1, lam(0xffffff, { map: furnTex }), 150, true) };
@@ -362,9 +403,59 @@
       W.crates.forEach(function (c) { c.respawn = 0; W.setCrate(c, true); });
     };
 
-    scene.background = new THREE.Color(0x8a8078); scene.fog = new THREE.Fog(0x8a8078, 30, 210);
-    scene.add(new THREE.HemisphereLight(0xd8cdbd, 0x4a4338, 1.0));
-    var sun = new THREE.DirectionalLight(0xffcf9a, 0.85); sun.position.set(-80, 70, 60); scene.add(sun);
+    /* ---------------- Siklus Langit Pagi - Siang - Sore - Malam ---------------- */
+    var skyColor = new THREE.Color(0x88b8de), fogColor = new THREE.Color(0x9bc4e6);
+    scene.background = skyColor; scene.fog = new THREE.Fog(fogColor, 34, 220);
+    var hemi = new THREE.HemisphereLight(0xf2f7ff, 0x625a48, 1.3); scene.add(hemi);
+    var sun = new THREE.DirectionalLight(0xfff5e0, 1.25); sun.position.set(80, 90, 60); scene.add(sun);
+
+    var skyGrp = new THREE.Group(); scene.add(skyGrp);
+    var sunMesh = new THREE.Mesh(new THREE.SphereGeometry(9, 12, 8), new THREE.MeshBasicMaterial({ color: 0xfff0b3, fog: false }));
+    var moonMesh = new THREE.Mesh(new THREE.SphereGeometry(6.5, 12, 8), new THREE.MeshBasicMaterial({ color: 0xdce8ff, fog: false }));
+    skyGrp.add(sunMesh); skyGrp.add(moonMesh);
+
+    var starPos = [];
+    for (var si = 0; si < 220; si++) {
+      var th = R() * 6.283, ph = R() * 1.35 + 0.1;
+      starPos.push(Math.cos(th) * Math.cos(ph) * 232, Math.sin(ph) * 232, Math.sin(th) * Math.cos(ph) * 232);
+    }
+    var starGeo = new THREE.BufferGeometry(); starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
+    var starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.8, sizeAttenuation: false, transparent: true, opacity: 0, fog: false });
+    skyGrp.add(new THREE.Points(starGeo, starMat));
+
+    var KEYS = [
+      [0.0,  0x0c1324, 0x0f182c, 0x455b8a, 0x19202d, 0.62, 0x8fb4f0, 0.45],
+      [5.2,  0x2b3454, 0x424463, 0x8084b0, 0x262834, 0.78, 0xffad75, 0.50],
+      [6.8,  0x8ab8de, 0xd4ac8c, 0xffe4c4, 0x5c5343, 1.18, 0xffd094, 1.12],
+      [12.0, 0x7cb6eb, 0x9ec6e8, 0xf2f7ff, 0x6a614e, 1.35, 0xfff6e4, 1.28],
+      [16.2, 0x9ab3d6, 0xcca488, 0xffe3c0, 0x5d5143, 1.18, 0xffbe75, 1.10],
+      [17.9, 0xd47148, 0xc77554, 0xffad7a, 0x4d3730, 0.96, 0xff7c3d, 0.95],
+      [19.3, 0x161f38, 0x18213a, 0x495f8d, 0x1c222e, 0.65, 0x8fb4f0, 0.45],
+      [24.0, 0x0c1324, 0x0f182c, 0x455b8a, 0x19202d, 0.62, 0x8fb4f0, 0.45]
+    ];
+    var cA = new THREE.Color(), cB = new THREE.Color();
+    function lerpCol(out, hexA, hexB, f) { cA.setHex(hexA); cB.setHex(hexB); out.copy(cA).lerp(cB, f); }
+
+    W.updateSky = function (hour, px, pz) {
+      var h = ((hour % 24) + 24) % 24, i = 0;
+      while (i < KEYS.length - 2 && h >= KEYS[i + 1][0]) i++;
+      var k0 = KEYS[i], k1 = KEYS[i + 1], f = (h - k0[0]) / (k1[0] - k0[0] || 1);
+      lerpCol(skyColor, k0[1], k1[1], f); lerpCol(fogColor, k0[2], k1[2], f);
+      scene.fog.color.copy(fogColor);
+      lerpCol(hemi.color, k0[3], k1[3], f); lerpCol(hemi.groundColor, k0[4], k1[4], f);
+      hemi.intensity = k0[5] + (k1[5] - k0[5]) * f;
+      lerpCol(sun.color, k0[6], k1[6], f);
+      sun.intensity = k0[7] + (k1[7] - k0[7]) * f;
+
+      var ang = ((h - 6) / 24) * Math.PI * 2, sy = Math.sin(ang) * 215, sx = Math.cos(ang) * 215, sz = 45;
+      skyGrp.position.set(px || 0, 0, pz || 0);
+      sunMesh.position.set(sx, sy, sz); sunMesh.visible = sy > -20;
+      moonMesh.position.set(-sx, -sy, -sz); moonMesh.visible = -sy > -20;
+      if (sy >= -8) sun.position.set(sx, Math.max(15, sy), sz);
+      else sun.position.set(-sx, Math.max(25, -sy), -sz);
+      starMat.opacity = h < 5.2 || h > 19.2 ? 0.9 : h < 6.4 ? (6.4 - h) / 1.2 * 0.9 : h > 18.0 ? (h - 18.0) / 1.2 * 0.9 : 0;
+    };
+    W.updateSky(7.0, -32, 32);
     return W;
   };
 })(window.WZ);

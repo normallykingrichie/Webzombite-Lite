@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Webzombite-Lite (Beta) - XKing</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -33,7 +33,9 @@
 
 <script>
 (function () {
+  window.__wzFatal = false;
   function show(m) {
+    window.__wzFatal = true;
     var s = document.getElementById('screen');
     if (!s) return;
     s.hidden = false;
@@ -45,28 +47,27 @@
     if (t && t.tagName === 'SCRIPT') {
       var src = t.getAttribute('src') || '';
       if (src.indexOf('three.min.js') >= 0) return;
-      show('Gagal memuat file: ' + src + '\nPastikan seluruh file sudah berada di folder yang sama dengan index.html.');
+      show('Gagal memuat file: ' + src + '\nPastikan seluruh file sudah ada di repo GitHub.');
     } else if (!t || t === window) {
       show((e.message || 'Kesalahan Skrip') + (e.filename ? '\n' + e.filename.split('/').pop() + ':' + e.lineno : ''));
     }
   }, true);
   setTimeout(function () {
-    if (!window.WZ || !window.WZ.started) {
+    if (!window.__wzFatal && (!window.WZ || !window.WZ.started)) {
       show('Permainan belum merespons. Tekan F12 lalu periksa tab Console untuk melihat detail error.');
     }
   }, 10000);
 })();
 </script>
 
-<script src="vendor/three.min.js"></script>
 <script>
 (function () {
   function loadFiles() {
-    var files = ['config.js', 'data.js', 'world.js', 'net.js', 'game.js'];
+    var files = ['config.js', 'data.js', 'sound.js', 'world.js', 'net.js', 'game.js'];
     function next(i) {
-      if (i >= files.length) return;
+      if (window.__wzFatal || i >= files.length) return;
       var s = document.createElement('script');
-      s.src = files[i];
+      s.src = files[i] + '?v=3';
       s.onload = function () { next(i + 1); };
       s.onerror = function () {
         if (window.__wzShowErr) window.__wzShowErr('Gagal memuat file: ' + files[i]);
@@ -75,17 +76,23 @@
     }
     next(0);
   }
-  if (window.THREE) {
-    loadFiles();
-  } else {
-    var cdn = document.createElement('script');
-    cdn.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-    cdn.onload = loadFiles;
-    cdn.onerror = function () {
-      if (window.__wzShowErr) window.__wzShowErr('Gagal memuat Three.js (vendor lokal maupun CDN). Periksa koneksi internet Anda.');
-    };
-    document.body.appendChild(cdn);
+  function loadThree(urls, idx) {
+    if (window.THREE) { loadFiles(); return; }
+    if (idx >= urls.length) {
+      if (window.__wzShowErr) window.__wzShowErr('Gagal memuat Three.js dari semua sumber CDN.');
+      return;
+    }
+    var s = document.createElement('script');
+    s.src = urls[idx];
+    s.onload = function () { if (window.THREE) loadFiles(); else loadThree(urls, idx + 1); };
+    s.onerror = function () { loadThree(urls, idx + 1); };
+    document.body.appendChild(s);
   }
+  loadThree([
+    'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
+    'vendor/three.min.js'
+  ], 0);
 })();
 </script>
 </body>
