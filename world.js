@@ -1,4 +1,4 @@
-/* AWAL world.js - Webzombite-Lite (Random Nature Spawn + Rumah Lootable Bervariasi) */
+/* AWAL world.js - Webzombite-Lite (Fix InstancedMesh r128 + Random Spawn + Rumah Bervariasi) */
 (function (WZ) {
   'use strict';
   WZ.HALF = 250; WZ.SPAWN_HALF = 262.5;
@@ -56,20 +56,24 @@
     };
 
     var Mx = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), S = new THREE.Vector3(), C = new THREE.Color(), UP = new THREE.Vector3(0, 1, 0);
-    function inst(geo, mat, cap, isDyn) {
-      var m = new THREE.InstancedMesh(geo, mat, cap); m.count = 0; m.frustumCulled = false;
+    function inst(geo, mat, cap, isDyn, useCol) {
+      var m = new THREE.InstancedMesh(geo, mat, cap);
       var u = isDyn ? THREE.DynamicDrawUsage : THREE.StaticDrawUsage;
       if (m.instanceMatrix && m.instanceMatrix.setUsage) m.instanceMatrix.setUsage(u);
-      m.setColorAt(0, C.setHex(0xffffff));
-      if (m.instanceColor) { m.instanceColor.array.fill(1); if (m.instanceColor.setUsage) m.instanceColor.setUsage(u); }
+      if (useCol) {
+        m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
+        if (m.instanceColor.setUsage) m.instanceColor.setUsage(u);
+      }
+      m.count = 0; m.frustumCulled = false;
       scene.add(m); return m;
     }
     function put(m, x, y, z, sx, sy, sz, ry, col, at) {
       var cap = m.instanceMatrix.count, i = at == null ? m.count : at;
       if (i >= cap) return cap - 1; if (at == null) m.count++;
       P.set(x, y, z); S.set(sx, sy, sz); Q.setFromAxisAngle(UP, ry || 0); Mx.compose(P, Q, S);
-      m.setMatrixAt(i, Mx); if (col != null) m.setColorAt(i, C.setHex(col));
-      m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; return i;
+      m.setMatrixAt(i, Mx);
+      if (col != null && m.instanceColor) { C.setHex(col); C.toArray(m.instanceColor.array, i * 3); m.instanceColor.needsUpdate = true; }
+      m.instanceMatrix.needsUpdate = true; return i;
     }
     W.put = put;
     var box1 = new THREE.BoxGeometry(1, 1, 1), boxB = new THREE.BoxGeometry(1, 1, 1); boxB.translate(0, 0.5, 0);
@@ -184,7 +188,7 @@
       g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeBoundingSphere();
       scene.add(new THREE.Mesh(g, lam(0xffffff, { map: roadTex })));
     })();
-    var dashes = inst(boxB, lam(0xe8c448), 1400, false);
+    var dashes = inst(boxB, lam(0xe8c448), 1400, false, false);
     ROADS.forEach(function (c) { for (var t = -255; t < 255; t += 7) { put(dashes, c, 0.03, t, 0.18, 0.01, 3.2, 0, null); put(dashes, t, 0.032, c, 3.2, 0.01, 0.18, 0, null); } });
 
     var occupied = [];
@@ -192,7 +196,7 @@
     function inOcc(x, z, m) { for (var i = 0; i < occupied.length; i++) { var o = occupied[i]; if (x > o[0] - m && x < o[1] + m && z > o[2] - m && z < o[3] + m) return true; } return false; }
     function zoneOf(x, z) { var d = Math.hypot(x, z); return d < 105 ? 'down' : d < 190 ? 'mid' : 'out'; }
 
-    var walls = inst(box1, lam(0xffffff, { map: houseWallTex }), 2500, false), winM = inst(box1, lam(0xffffff, { map: winTex }), 800, false), roofCols = [0x5c5751, 0x69625a, 0x51575e];
+    var walls = inst(box1, lam(0xffffff, { map: houseWallTex }), 2500, false, true), winM = inst(box1, lam(0xffffff, { map: winTex }), 800, false, false), roofCols = [0x5c5751, 0x69625a, 0x51575e];
     var facadeBuckets = FACADE_MATS.map(function () { return { pos: [], norm: [], uv: [], idx: [] }; });
     var roofBucket = { pos: [], norm: [], col: [], idx: [] };
     function pushSide(bk, p0, p1, p2, p3, nx, ny, nz, ur, vr) {
@@ -214,7 +218,7 @@
     }
     function wallSeg(x0, x1, z0, z1, y0, y1, col) { put(walls, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, x1 - x0, y1 - y0, z1 - z0, 0, col); addBox(x0, x1, y0, y1, z0, z1, false); }
 
-    var bedM = inst(box1, lam(0xffffff, { map: houseWallTex }), 400, false), couchM = inst(box1, lam(0xffffff, { map: houseWallTex }), 400, false);
+    var bedM = inst(box1, lam(0xffffff, { map: houseWallTex }), 400, false, true), couchM = inst(box1, lam(0xffffff, { map: houseWallTex }), 400, false, true);
     function addBed(x, z, clean) {
       put(bedM, x, 0.3, z, 2.0, 0.6, 1.0, 0, clean ? 0xe5dfd0 : 0x6e5b4d); put(bedM, x - 0.9, 0.65, z, 0.18, 0.5, 1.0, 0, clean ? 0xc89562 : 0x4a3d33);
       addBox(x - 1.0, x + 1.0, 0, 0.6, z - 0.5, z + 0.5, false); addEnt({ k: 'bed', x: x, z: z, y: 0, r: 1.3, h: 0.8, clean: clean, alive: true, dyn: false });
@@ -260,7 +264,7 @@
 
     var trunkG = new THREE.CylinderGeometry(0.22, 0.34, 1, 7); trunkG.translate(0, 0.5, 0);
     var crownG = new THREE.ConeGeometry(1, 1, 8); crownG.translate(0, 0.5, 0);
-    var trunkM = inst(trunkG, lam(0xffffff, { map: barkTex }), 650, true), crownM = inst(crownG, lam(0xffffff, { map: leafTex }), 650, true);
+    var trunkM = inst(trunkG, lam(0xffffff, { map: barkTex }), 650, true, false), crownM = inst(crownG, lam(0xffffff, { map: leafTex }), 650, true, true);
     function treeMat(t, on) {
       if (!on) { put(trunkM, 0, -50, 0, 0.0001, 0.0001, 0.0001, 0, null, t.ix); put(crownM, 0, -50, 0, 0.0001, 0.0001, 0.0001, 0, null, t.ix); return; }
       put(trunkM, t.x, 0, t.z, 1.2 * t.s, t.th, 1.2 * t.s, t.ry, null, t.ix); put(crownM, t.x, t.th * 0.62, t.z, 2.6 * t.s, 3.4 * t.s, 2.6 * t.s, t.ry, t.cc, t.ix);
@@ -273,7 +277,7 @@
       treeMat(t, true); addEnt(t); W.trees.push(t);
     }
 
-    var rockG = new THREE.DodecahedronGeometry(1, 0), rockM = inst(rockG, lam(0xffffff, { map: rockTex, flatShading: true }), 220, true);
+    var rockG = new THREE.DodecahedronGeometry(1, 0), rockM = inst(rockG, lam(0xffffff, { map: rockTex, flatShading: true }), 220, true, true);
     W.setRock = function (t, on) {
       if (!on) put(rockM, 0, -50, 0, 0.0001, 0.0001, 0.0001, 0, null, t.ix);
       else put(rockM, t.x, 0.55 * t.s, t.z, 1.15 * t.s, 0.8 * t.s, 1.0 * t.s, t.ry, t.cc, t.ix);
@@ -285,7 +289,7 @@
       W.setRock(t, true); addEnt(t); W.rocks.push(t);
     }
 
-    var pileM = inst(box1, lam(0xffffff, { map: houseWallTex }), 2800, true), shineM = inst(box1, lam(0xffffff), 1000, true);
+    var pileM = inst(box1, lam(0xffffff, { map: houseWallTex }), 2800, true, true), shineM = inst(box1, lam(0xffffff), 1000, true, true);
     W.setPile = function (p, full) { var k = full ? 1 : 0.3; p.parts.forEach(function (q) { put(q.m, p.x + q.dx, q.y * k, p.z + q.dz, q.sx, q.sy * k, q.sz, q.ry, q.col, q.i); }); p.searched = !full; };
     function addPile(x, z, tier, rng) {
       var p = { k: 'pile', idx: W.piles.length, tier: tier, x: x, z: z, y: 0, r: 0.9, h: 0.9, alive: true, dyn: true, searched: false, respawn: 0, parts: [] };
@@ -295,7 +299,7 @@
       W.setPile(p, true); addEnt(p); W.piles.push(p);
     }
 
-    var crateM = inst(box1, lam(0xffffff, { map: crateTex }), 250, true), lidM = inst(box1, lam(0x4f361c), 250, true);
+    var crateM = inst(box1, lam(0xffffff, { map: crateTex }), 250, true, true), lidM = inst(box1, lam(0x4f361c), 250, true, false);
     W.setCrate = function (c, full) { put(crateM, c.x, full ? 0.45 : 0.3, c.z, 0.9, full ? 0.9 : 0.6, 0.9, c.ry, full ? 0xffffff : 0x8a7558, c.ix); put(lidM, c.x, full ? 0.92 : -5, c.z, 0.98, 0.1, 0.98, c.ry, null, c.ix); c.searched = !full; };
     function addCrate(x, z, isDyn, rng) {
       var fn = rng || R, c = { k: 'crate', idx: W.crates.length, x: x, z: z, y: 0, r: 0.75, h: 0.9, alive: true, dyn: !!isDyn, searched: false, respawn: 0, ry: fn() * 3 };
@@ -332,7 +336,7 @@
       var rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(roofBucket.pos, 3)); rg.setAttribute('normal', new THREE.Float32BufferAttribute(roofBucket.norm, 3));
       rg.setAttribute('color', new THREE.Float32BufferAttribute(roofBucket.col, 3)); rg.setIndex(roofBucket.idx); rg.computeBoundingSphere(); scene.add(new THREE.Mesh(rg, new THREE.MeshLambertMaterial({ vertexColors: true })));
     }
-    var carBody = inst(boxB, lam(0xffffff, { map: houseWallTex }), 80, false), carTop = inst(boxB, lam(0x373b40), 80, false), cars = 0, cTry = 0;
+    var carBody = inst(boxB, lam(0xffffff, { map: houseWallTex }), 80, false, true), carTop = inst(boxB, lam(0x373b40), 80, false, false), cars = 0, cTry = 0;
     while (cars < 55 && cTry++ < 600) {
       var vl = pick(ROADS), alongV = rr(-240, 240), lane = (R() < 0.5 ? -1 : 1) * rr(1.2, 3), horiz = R() < 0.5;
       var cxx = horiz ? alongV : vl + lane, czz = horiz ? vl + lane : alongV, lenX = horiz ? 4.4 : 1.9, lenZ = horiz ? 1.9 : 4.4;
@@ -340,7 +344,7 @@
       put(carTop, cxx, 1.15, czz, horiz ? 2.2 : 1.7, 0.6, horiz ? 1.7 : 2.2, 0, null);
       addBox(cxx - lenX / 2, cxx + lenX / 2, 0, 1.75, czz - lenZ / 2, czz + lenZ / 2, false); cars++;
     }
-    var postM = inst(boxB, lam(0xc44230), 360, false);
+    var postM = inst(boxB, lam(0xc44230), 360, false, false);
     for (var pt = -250; pt <= 250; pt += 6) { put(postM, pt, 0, -250, 0.25, 1.6, 0.25, 0, null); put(postM, pt, 0, 250, 0.25, 1.6, 0.25, 0, null); put(postM, -250, 0, pt, 0.25, 1.6, 0.25, 0, null); put(postM, 250, 0, pt, 0.25, 1.6, 0.25, 0, null); }
 
     var staticCrateCount = W.crates.length;
@@ -374,7 +378,7 @@
     }
     spawnNature(initSeed != null ? initSeed : rndSeed());
 
-    var VM = { 1: inst(box1, lam(0xffffff, { map: plankTex }), 2800, true), 2: inst(box1, lam(0xffffff, { map: stoneTex }), 2800, true), 3: inst(box1, lam(0xffffff, { map: furnTex }), 150, true) };
+    var VM = { 1: inst(box1, lam(0xffffff, { map: plankTex }), 2800, true, false), 2: inst(box1, lam(0xffffff, { map: stoneTex }), 2800, true, false), 3: inst(box1, lam(0xffffff, { map: furnTex }), 150, true, false) };
     var vkeys = { 1: [], 2: [], 3: [] }, vcount = 0; W.MAX_VOX = 2600;
     W.voxCount = function () { return vcount; };
     W.getVox = function (x, y, z) { return vox.get(vk(x, y, z)) || null; };
