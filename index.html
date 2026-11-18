@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Webzombite-Lite (Beta) - XKing</title>
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -67,7 +67,7 @@
     function next(i) {
       if (window.__wzFatal || i >= files.length) return;
       var s = document.createElement('script');
-      s.src = files[i] + '?v=4';
+      s.src = files[i] + '?v=6';
       s.onload = function () { next(i + 1); };
       s.onerror = function () {
         if (window.__wzShowErr) window.__wzShowErr('Gagal memuat file: ' + files[i]);

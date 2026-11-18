@@ -22,6 +22,7 @@
   var scene, camera, renderer, W, torch = null, torchOn = false, autoTorchDone = false;
   var P = { x: -32, y: 0, z: 32, vx: 0, vz: 0, vy: 0, yaw: 0, pitch: 0, onGround: false, hp: 100, hunger: 100, thirst: 100, energy: 100, comfort: 100 };
   var inv = {}, hot = [null, null, null, null, null, null, null, null], sel = 0;
+  var equip = { head: null, chest: null, legs: null, boots: null };
   var T = 0, kills = 0, dead = false, rest = null, status = { poison: 0, stomach: 0 };
   var zombies = [], zMap = Object.create(null), nextZid = 1;
   var keys = {}, lmb = false, swingCd = 0, eatT = 0, spawnT = 3, stepT = 0, groanT = 4, voxVer = 0, cache = { ver: -1, list: [] };
@@ -29,6 +30,25 @@
 
   var mp = { role: 'solo', room: '', slot: 0, online: false, peers: Object.create(null), lastHostSeen: 0, lastPoseSent: 0, lastZSent: 0, swingPulse: 0, joinTimer: null };
   var SLOT_COLS = [0xe3b02a, 0x3b82f6, 0x22c55e, 0xec4899], SLOT_HEX = ['#e3b02a', '#3b82f6', '#22c55e', '#ec4899'];
+
+  function armorStats() {
+    var def = 0, woodN = 0, ironN = 0, slots = ['head', 'chest', 'legs', 'boots'];
+    for (var i = 0; i < slots.length; i++) {
+      var it = ITEMS[equip[slots[i]]];
+      if (!it || it.type !== 'armor') continue;
+      def += it.def || 0;
+      if (it.tier === 'wood') woodN++; else if (it.tier === 'iron') ironN++;
+    }
+    return {
+      def: def, woodN: woodN, ironN: ironN,
+      spdBonus: 1 + woodN * 0.03,
+      energyDrain: 1 - woodN * 0.06,
+      comfortDrain: 1 - woodN * 0.06,
+      hpMax: 100 + ironN * 5,
+      dmgMult: 1 + ironN * 0.06,
+      poisonResist: 1 - ironN * 0.125
+    };
+  }
 
   /* ---------------- Save & Load Code ---------------- */
   var te = new TextEncoder(), td = new TextDecoder();
@@ -50,7 +70,7 @@
   }
   function snapshot(worldOnly) {
     if (cache.ver !== voxVer) { cache.list = W.voxList(); cache.ver = voxVer; }
-    var o = { v: 1, sd: W.seed, t: Math.round(T * 10) / 10, b: cache.list, tr: [], rk: [], pl: [], cr: [] };
+    var o = { v: 2, sd: W.seed, t: Math.round(T * 10) / 10, b: cache.list, tr: [], rk: [], pl: [], cr: [] };
     W.trees.forEach(function (t, i) { if (!t.alive || t.hp < t.max) o.tr.push([i, Math.round(t.hp), t.given, Math.round(t.respawn)]); });
     W.rocks.forEach(function (t, i) { if (!t.alive || t.hp < t.max) o.rk.push([i, Math.round(t.hp), t.given, Math.round(t.respawn)]); });
     W.piles.forEach(function (p, i) { if (p.searched) o.pl.push([i, Math.round(p.respawn)]); });
@@ -58,7 +78,7 @@
     if (!worldOnly) {
       o.k = kills; o.p = [r2(P.x), r2(P.y), r2(P.z), Math.round(P.yaw * 1000) / 1000, Math.round(P.pitch * 1000) / 1000];
       o.s = [Math.round(P.hp), Math.round(P.hunger), Math.round(P.thirst), Math.round(P.energy), Math.round(P.comfort), Math.round(status.poison * 10) / 10, Math.round(status.stomach * 10) / 10];
-      o.i = inv; o.h = hot; o.l = sel;
+      o.i = inv; o.h = hot; o.l = sel; o.eq = equip;
     }
     return o;
   }
@@ -72,13 +92,13 @@
     if (fnv1a(b64) !== chk) return { err: 'Kode simpan tidak cocok (ada karakter hilang/berubah).' };
     try {
       var obj = JSON.parse(td.decode(b64d(b64)));
-      if (!obj || obj.v !== 1 || !Array.isArray(obj.p) || typeof obj.i !== 'object') return { err: 'Struktur kode simpan tidak dikenali.' };
+      if (!obj || (obj.v !== 1 && obj.v !== 2) || !Array.isArray(obj.p) || typeof obj.i !== 'object') return { err: 'Struktur kode simpan tidak dikenali.' };
       return { data: obj };
     } catch (e) { return { err: 'Gagal membaca kode simpan.' }; }
   }
   function applySave(s, worldOnly) {
-    if (!s || s.v !== 1) return false;
-    W.resetWorld(s.sd != null ? s.sd : 20261116); T = s.t || 0; W.voxLoad(s.b || []); voxVer++;
+    if (!s || (s.v !== 1 && s.v !== 2)) return false;
+    W.resetWorld(s.sd != null ? s.sd : 20261116); T = s.t || 0; W.voxLoad(s.b || [], s.v || 1); voxVer++;
     (s.tr || []).forEach(function (a) { var t = W.trees[a[0]]; if (!t) return; t.hp = a[1]; t.given = a[2]; t.respawn = a[3]; if (t.hp <= 0) W.setTree(t, false); });
     (s.rk || []).forEach(function (a) { var t = W.rocks[a[0]]; if (!t) return; t.hp = a[1]; t.given = a[2]; t.respawn = a[3]; if (t.hp <= 0) W.setRock(t, false); });
     (s.pl || []).forEach(function (a) { var p = W.piles[a[0]]; if (p) { W.setPile(p, false); p.respawn = a[1]; } });
@@ -86,8 +106,11 @@
     if (!worldOnly) {
       kills = s.k || 0; P.x = clamp(s.p[0] || -32, -249, 249); P.y = Math.max(0, s.p[1] || 0); P.z = clamp(s.p[2] || 32, -249, 249);
       P.vx = P.vz = P.vy = 0; P.yaw = s.p[3] || 0; P.pitch = clamp(s.p[4] || 0, -1.5, 1.5);
+      equip = { head: null, chest: null, legs: null, boots: null };
+      if (s.eq) { ['head', 'chest', 'legs', 'boots'].forEach(function (sl) { var id = s.eq[sl]; if (id && ITEMS[id] && ITEMS[id].slot === sl) equip[sl] = id; }); }
+      var mxHp = armorStats().hpMax;
       if (Array.isArray(s.s)) {
-        P.hp = s.s[0] > 0 ? clamp(s.s[0], 1, 100) : 100; P.hunger = clamp(s.s[1] != null ? s.s[1] : 100, 0, 100);
+        P.hp = s.s[0] > 0 ? clamp(s.s[0], 1, mxHp) : mxHp; P.hunger = clamp(s.s[1] != null ? s.s[1] : 100, 0, 100);
         P.thirst = clamp(s.s[2] != null ? s.s[2] : 100, 0, 100); P.energy = clamp(s.s[3] != null ? s.s[3] : 100, 0, 100);
         P.comfort = clamp(s.s[4] != null ? s.s[4] : 100, 0, 100); status = { poison: s.s[5] || 0, stomach: s.s[6] || 0 };
       }
@@ -106,6 +129,7 @@
   function newPlayerState(slotIdx) {
     inv = { rusty_axe: 1, rusty_pickaxe: 1, plastic_bottled_water: 1 };
     hot = [null, 'rusty_axe', 'rusty_pickaxe', 'plastic_bottled_water', null, null, null, null]; sel = 1;
+    equip = { head: null, chest: null, legs: null, boots: null };
     P.hp = P.hunger = P.thirst = P.energy = P.comfort = 100; status = { poison: 0, stomach: 0 }; kills = 0; dead = false; rest = null;
     $('#dark').style.opacity = 0; placeAtSpawn(slotIdx || 0);
   }
@@ -114,7 +138,7 @@
   function count(id) { return inv[id] || 0; }
   function give(id, n) {
     if (!ITEMS[id] || !n) return; inv[id] = (inv[id] || 0) + n; var it = ITEMS[id];
-    if (it && it.type !== 'material' && hot.indexOf(id) < 0) { for (var i = 1; i < 8; i++) if (!hot[i]) { hot[i] = id; break; } }
+    if (it && it.type !== 'material' && it.type !== 'armor' && hot.indexOf(id) < 0) { for (var i = 1; i < 8; i++) if (!hot[i]) { hot[i] = id; break; } }
     renderHotbar();
   }
   function take(id, n) {
@@ -131,7 +155,7 @@
 
   /* ---------------- Input & Kontrol ---------------- */
   function inputDelay() { return P.comfort <= 0 ? 0.1 : P.comfort <= 30 ? 0.05 : 0; }
-  function speedMult() { return P.comfort <= 0 ? 0.98 : P.comfort <= 30 ? 0.99 : 1; }
+  function speedMult() { return (P.comfort <= 0 ? 0.98 : P.comfort <= 30 ? 0.99 : 1) * armorStats().spdBonus; }
   var queue = [];
   function push(ev) { var d = inputDelay(); if (d <= 0 && !queue.length) applyEv(ev); else { ev.t = performance.now() + d * 1000; queue.push(ev); } }
   function drain() { var n = performance.now(); while (queue.length && queue[0].t <= n) applyEv(queue.shift()); }
@@ -195,8 +219,8 @@
   function screen(html) { var s = $('#screen'); s.innerHTML = html; s.hidden = false; }
   function controlsHtml() {
     return '<div class="keys"><b>W A S D</b><span>Bergerak</span><b>Shift</b><span>Lari cepat</span><b>Spasi</b><span>Melompat</span>' +
-      '<b>Klik Kiri</b><span>Serang / tebang / tambang / makan</span><b>Klik Kanan</b><span>Pasang blok</span><b>E</b><span>Loot, kasur, sofa, tungku</span>' +
-      '<b>F / M</b><span>Senter / Bisu Suara</span><b>1-8 / Scroll</b><span>Hotbar</span><b>Tab / I</b><span>Tas &amp; Crafting</span><b>Esc / P</b><span>Jeda &amp; Kode Simpan</span></div>';
+      '<b>Klik Kiri</b><span>Serang / tebang / bongkar / pakai medis</span><b>Klik Kanan</b><span>Pasang blok &amp; furnitur</span><b>E</b><span>Loot, kasur, sofa, tungku, wastafel</span>' +
+      '<b>F / M</b><span>Senter / Bisu Suara</span><b>1-8 / Scroll</b><span>Hotbar</span><b>Tab / I</b><span>Tas, Armor &amp; Crafting</span><b>Esc / P</b><span>Jeda &amp; Kode Simpan</span></div>';
   }
 
   /* ---------------- Menu Utama & Multiplayer ---------------- */
@@ -210,7 +234,7 @@
     mode = 'menu'; keys = {}; lmb = false; eatT = 0; queue.length = 0; $('#hud').hidden = true; $('#inv').hidden = true; $('#eat').style.display = 'none';
     if (document.pointerLockElement) { try { document.exitPointerLock(); } catch (e) {} }
     screen('<div class="card"><span class="tag">Versi Tugas &middot; Beta</span><h1><b>Webzombite</b>-Lite</h1>' +
-      '<p>Bertahan hidup di reruntuhan Kota XKing seluas 500 m &times; 500 m dengan siklus Pagi–Siang–Sore–Malam. Tebang pohon, tambang batu, dan bangun markas hingga 4 pemain.</p>' +
+      '<p>Bertahan hidup di reruntuhan Kota XKing seluas 500 m &times; 500 m dengan siklus Pagi–Siang–Sore–Malam. Tebang pohon, tambang batu, buat armor &amp; wastafel, dan bangun markas hingga 4 pemain.</p>' +
       '<div class="warn-note">Progres hanya berjalan selama sesi ini dan <b>otomatis terhapus saat tab ditutup</b>. Gunakan <b>Kode Simpan &amp; Muat</b> agar duniamu aman!</div>' +
       '<div class="box-sub"><div class="row" style="justify-content:space-between"><label style="font-size:.86rem;color:var(--muted)">Nama Penyintas</label><span style="font-size:.78rem;color:var(--muted)">Tanpa login</span></div>' +
       '<input type="text" id="inpName" maxlength="16" value="' + esc(playerName) + '" placeholder="Masukkan namamu...">' +
@@ -221,7 +245,7 @@
       controlsHtml() + '<div class="row"><a class="btn sm" href="' + esc(C.coreUrl || '../index.html') + '">Kembali ke XKing Core</a></div></div>');
 
     function syncName() { playerName = ($('#inpName').value || '').trim().slice(0, 16) || 'Penyintas'; }
-    $('#bSolo').onclick = function () { SFX.unlock(); SFX.play('click'); syncName(); leaveRoom(); W.resetWorld(); newPlayerState(0); T = 0; clearZombies(); for (var i = 0; i < 6; i++) spawnZombie(); enterGame(); };
+    $('#bSolo').onclick = function () { SFX.unlock(); SFX.play('click'); syncName(); leaveRoom(); W.resetWorld(); newPlayerState(0); T = 0; spawnT = 3; clearZombies(); enterGame(); say('30 detik masa aman dimulai! Segera kumpulkan bahan.'); };
     $('#bHost').onclick = function () { SFX.unlock(); SFX.play('click'); syncName(); hostRoom(false); };
     $('#bJoin').onclick = function () { SFX.unlock(); SFX.play('click'); syncName(); var c = Net.normalizeCode($('#inpRoom').value); if (c.length !== 6) { $('#menuErr').textContent = 'Masukkan tepat 6 huruf/angka kode room.'; return; } joinRoom(c); };
     $('#inpRoom').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') $('#bJoin').click(); });
@@ -252,7 +276,7 @@
       function runImp(asHost) {
         var res = decodeSaveCode($('#txLoad').value); if (res.err) { $('#loadErr').textContent = res.err; return; }
         if (!asHost && mp.role === 'host') leaveRoom();
-        applySave(res.data, false); clearZombies(); for (var i = 0; i < 6; i++) spawnZombie();
+        applySave(res.data, false); clearZombies(); if (T >= 30) { for (var i = 0; i < 4; i++) spawnZombie(); }
         if (asHost) { if (mp.role === 'host') { Net.send({ t: 'worldsync', snap: snapshot(true) }); enterGame(); } else hostRoom(true); say('Kode simpan dimuat di room!'); }
         else { enterGame(); say('Kode simpan berhasil dimuat!'); }
       }
@@ -267,7 +291,7 @@
     var mpHtml = mp.role !== 'solo' ? '<div class="box-sub"><div class="row" style="justify-content:space-between"><div>Kode Room: <span class="code-pill">' + esc(mp.room) + '</span></div><button class="btn sm" id="bCopyRoom">Salin Kode</button></div><div style="font-size:.82rem;color:var(--muted)">Pemain (' + totalPlayers() + '/' + MAX_PLAYERS + ') &middot; ' + (mp.online ? 'Terhubung Online' : 'Menghubungkan / Lokal') + ' &middot; Huruf besar/kecil sama</div>' + playerListHtml() + '</div>' : '';
     screen('<div class="card"><span class="tag">Webzombite-Lite &middot; Jeda</span><h1>Permainan Dijeda</h1>' +
       '<p>Bertahan: <b>' + fmtTime(T) + '</b> &middot; Kill: <b>' + kills + '</b>. Jangan lupa simpan kode duniamu sebelum keluar!</p>' + mpHtml +
-      '<div class="row"><button class="btn primary" id="bResume">Lanjutkan</button><button class="btn" id="bInv">Tas &amp; Crafting</button><button class="btn" id="bSaveCode">Kode Simpan / Muat</button></div>' +
+      '<div class="row"><button class="btn primary" id="bResume">Lanjutkan</button><button class="btn" id="bInv">Tas, Armor &amp; Crafting</button><button class="btn" id="bSaveCode">Kode Simpan / Muat</button></div>' +
       controlsHtml() + '<div class="row"><button class="btn" id="bMenu">Menu Utama</button>' +
       (mp.role !== 'client' ? '<button class="btn danger" id="bReset">Reset Dunia</button>' : '') +
       '<a class="btn sm" href="' + esc(C.coreUrl || '../index.html') + '">Kembali ke XKing Core</a></div></div>');
@@ -278,13 +302,12 @@
     $('#bMenu').onclick = function () { SFX.play('click'); leaveRoom(); showMainMenu(); };
     if ($('#bReset')) $('#bReset').onclick = function () {
       if (confirm('Reset dunia dengan posisi pohon & batu acak baru?')) {
-        W.resetWorld(); newPlayerState(mp.slot); T = 0; clearZombies(); for (var i = 0; i < 6; i++) spawnZombie();
-        if (mp.role === 'host') Net.send({ t: 'worldsync', snap: snapshot(true) }); enterGame(); say('Dunia baru acak telah dibuat.');
+        W.resetWorld(); newPlayerState(mp.slot); T = 0; spawnT = 3; clearZombies();
+        if (mp.role === 'host') Net.send({ t: 'worldsync', snap: snapshot(true) }); enterGame(); say('Dunia baru acak dibuat! 30 detik masa aman dimulai.');
       }
     };
   }
-/* === BATAS BAGIAN 1 (TEMPEL BAGIAN 2 TEPAT DI BAWAH BARIS INI) === */
-/* === AWAL BAGIAN 2 === */
+/* === BATAS BAGIAN 1 (TEMPEL BAGIAN 2 TEPAT DI BAWAH BARIS INI) === *//* === AWAL BAGIAN 2 === */
   /* ---------------- HUD & Minimap ---------------- */
   function renderHotbar() {
     var h = '';
@@ -296,14 +319,21 @@
     if ($('#held')) $('#held').textContent = ITEMS[hot[sel] || 'fists'].ic;
   }
   function renderStats() {
-    var defs = [['hp', 'Darah', 'b-hp'], ['hunger', 'Lapar', 'b-hu'], ['thirst', 'Haus', 'b-th'], ['energy', 'Energi', 'b-en'], ['comfort', 'Nyaman', 'b-co']];
-    $('#stats').innerHTML = defs.map(function (d) { var v = Math.round(P[d[0]]); return '<div class="bar ' + d[2] + '"><i style="width:' + clamp(v, 0, 100) + '%"></i><span><b>' + d[1] + '</b><b>' + v + '</b></span></div>'; }).join('');
+    var ast = armorStats();
+    var defs = [['hp', 'Darah', 'b-hp', ast.hpMax], ['hunger', 'Lapar', 'b-hu', 100], ['thirst', 'Haus', 'b-th', 100], ['energy', 'Energi', 'b-en', 100], ['comfort', 'Nyaman', 'b-co', 100]];
+    $('#stats').innerHTML = defs.map(function (d) {
+      var v = Math.round(P[d[0]]), mx = d[3], pct = clamp(P[d[0]] / mx * 100, 0, 100);
+      return '<div class="bar ' + d[2] + '"><i style="width:' + pct + '%"></i><span><b>' + d[1] + '</b><b>' + v + (mx > 100 ? '/' + mx : '') + '</b></span></div>';
+    }).join('');
     var s = [];
     if (status.poison > 0) s.push('Keracunan'); if (status.stomach > 0) s.push('Sakit Perut');
     if (P.comfort <= 30) s.push('Tidak Nyaman'); if (rest) s.push(rest.k === 'sleep' ? 'Sedang Tidur' : 'Sedang Istirahat');
     $('#status').innerHTML = s.map(function (t) { return '<span>' + t + '</span>'; }).join('');
-    var clk = clockInfo(T), roomTxt = mp.role !== 'solo' ? '<br>Room <b>' + esc(mp.room) + '</b> (' + totalPlayers() + '/' + MAX_PLAYERS + ')' + (mp.online ? ' · Online' : ' · Lokal') : '';
-    $('#info').innerHTML = 'Hari <b>' + clk.day + '</b> · <b>' + clk.str + '</b> (' + clk.fase + ')<br>Bertahan <b>' + fmtTime(T) + '</b> · Kill <b>' + kills + '</b> · Zombie <b>' + zombies.length + '</b><br>[F] Senter: <b>' + (torchOn ? 'Nyala' : 'Mati') + '</b> · [M] Suara: <b>' + (SFX.isMuted() ? 'Bisu' : 'Aktif') + '</b>' + roomTxt;
+    var clk = clockInfo(T), safeTxt = T < 30 ? ' · Masa Aman <b>' + Math.ceil(30 - T) + 'd</b>' : '';
+    var roomTxt = mp.role !== 'solo' ? '<br>Room <b>' + esc(mp.room) + '</b> (' + totalPlayers() + '/' + MAX_PLAYERS + ')' + (mp.online ? ' · Online' : ' · Lokal') : '';
+    $('#info').innerHTML = 'Hari <b>' + clk.day + '</b> · <b>' + clk.str + '</b> (' + clk.fase + ')' + safeTxt +
+      '<br>DEF <b>' + ast.def + '</b> · Kill <b>' + kills + '</b> · Zombie <b>' + zombies.length + '</b>' +
+      '<br>[F] Senter: <b>' + (torchOn ? 'Nyala' : 'Mati') + '</b> · [M] Suara: <b>' + (SFX.isMuted() ? 'Bisu' : 'Aktif') + '</b>' + roomTxt;
   }
   var mini, mctx;
   function drawMini() {
@@ -338,7 +368,7 @@
     if (rest) { wx = wz = 0; len = 0; } if (len > 0) { wx /= len; wz /= len; }
     var sprint = keys.ShiftLeft && fwd > 0 && P.energy > 0 && !rest, sp = (sprint ? 6.4 : 4.2) * speedMult() * (P.energy <= 0 ? 0.92 : 1);
     var f = Math.min(1, (P.onGround ? 14 : 3) * dt); P.vx += (wx * sp - P.vx) * f; P.vz += (wz * sp - P.vz) * f;
-    if (sprint && len > 0) P.energy = Math.max(0, P.energy - 3 * dt);
+    if (sprint && len > 0) P.energy = Math.max(0, P.energy - 3 * armorStats().energyDrain * dt);
     if (keys.Space && P.onGround && !rest) { P.vy = 6.4; P.onGround = false; SFX.play('step'); }
     if (P.onGround && Math.hypot(P.vx, P.vz) > 1.2) { stepT -= dt; if (stepT <= 0) { stepT = sprint ? 0.28 : 0.42; SFX.play('step'); } } else stepT = 0.08;
     var n = Math.max(1, Math.ceil(dt / 0.012)), h = dt / n;
@@ -362,13 +392,13 @@
     return null;
   }
   function unkey(k) { var y = k % 64, r = Math.floor(k / 64), z = (r % 1024) - 300, x = Math.floor(r / 1024) - 300; return [x, y, z]; }
-  var VNAME = { 1: 'Blok Kayu', 2: 'Blok Batu', 3: 'Tungku Pelebur' }, VITEM = { 1: 'wood_block', 2: 'stone_block', 3: 'furnace' };
+  var VNAME = { 1: 'Blok Kayu', 2: 'Blok Batu', 3: 'Tungku Pelebur', 4: 'Kasur Nyaman', 5: 'Sofa Nyaman', 6: 'Wastafel (Sink)' };
+  var VITEM = { 1: 'wood_block', 2: 'stone_block', 3: 'furnace', 4: 'bed_block', 5: 'couch_block', 6: 'sink_block' };
 
   function damageVoxLocal(cx, cy, cz, dmg, giveToPid) {
     var v = W.getVox(cx, cy, cz); if (!v) return null; v.hp -= dmg;
     if (v.hp <= 0) {
       var vt = v.t; W.delVox(cx, cy, cz); voxVer++;
-      if (vt === 3) W.furn.forEach(function (f) { if (f.alive && f.vx === cx && f.vy === cy && f.vz === cz) f.alive = false; });
       if (mp.role === 'host') { Net.send({ t: 'vox', op: 0, x: cx, y: cy, z: cz }); if (giveToPid && giveToPid !== Net.info().pid) Net.send({ t: 'give', to: giveToPid, id: VITEM[vt], n: 1 }); else if (giveToPid === 'self') give(VITEM[vt], 1); }
       else if (mp.role === 'solo' && giveToPid === 'self') give(VITEM[vt], 1);
       return { broken: true, vt: vt, hp: 0 };
@@ -385,24 +415,26 @@
     }
     if (mp.role === 'host') Net.send({ t: 'ent', k: e.k, idx: e.idx, hp: Math.round(e.hp), given: e.given, alive: e.alive });
   }
+  function hitVoxAt(cx, cy, cz, bd) {
+    SFX.play('block');
+    if (mp.role === 'client') Net.send({ t: 'dmgVox', x: cx, y: cy, z: cz, dmg: bd * 2 });
+    else { var res = damageVoxLocal(cx, cy, cz, bd * 2, 'self'); if (res) say(VNAME[res.vt] + (res.broken ? ' diambil kembali' : ' ' + Math.max(0, Math.round(res.hp)))); }
+  }
   function swing() {
-    var it = curItem(); if (it.type === 'food' || it.type === 'drink' || it.type === 'block') return;
+    var it = curItem(); if (it.type === 'food' || it.type === 'drink' || it.type === 'block' || it.type === 'med') return;
     swingCd = (it.tool === 'club' ? 0.55 : 0.48) * (P.energy <= 0 ? 1.4 : 1); mp.swingPulse = 0.25;
     var held = $('#held'); held.classList.add('swing'); setTimeout(function () { held.classList.remove('swing'); }, 110);
     var h = aim(3.0); if (!h) { SFX.play('swing'); return; }
     if (h.kind === 'zombie') {
+      var meleeDmg = Math.round(it.dmg * armorStats().dmgMult);
       SFX.play('hit');
-      if (mp.role === 'client') { h.z.flash = 0.14; Net.send({ t: 'hitZ', id: h.z.id, dmg: it.dmg }); } else hitZombie(h.z, it.dmg, 'self');
+      if (mp.role === 'client') { h.z.flash = 0.14; Net.send({ t: 'hitZ', id: h.z.id, dmg: meleeDmg }); } else hitZombie(h.z, meleeDmg, 'self');
       return;
     }
-    if (h.kind === 'vox') {
-      var c = unkey(h.key); SFX.play('block');
-      if (mp.role === 'client') Net.send({ t: 'dmgVox', x: c[0], y: c[1], z: c[2], dmg: it.bd * 2 });
-      else { var res = damageVoxLocal(c[0], c[1], c[2], it.bd * 2, 'self'); if (res) say(VNAME[res.vt] + (res.broken ? ' dibongkar' : ' ' + Math.max(0, Math.round(res.hp)))); }
-      return;
-    }
+    if (h.kind === 'vox') { var c = unkey(h.key); hitVoxAt(c[0], c[1], c[2], it.bd); return; }
     if (h.kind !== 'ent') { SFX.play('swing'); return; }
     var e = h.e;
+    if (e.vx != null) { hitVoxAt(e.vx, e.vy, e.vz, it.bd); return; }
     if (e.k === 'tree' || e.k === 'rock') {
       var need = e.k === 'tree' ? 'axe' : 'pick';
       if (it.tool !== need) { say(e.k === 'tree' ? 'Kamu butuh kapak untuk menebang pohon.' : 'Kamu butuh beliung untuk menambang batu.', true); return; }
@@ -424,14 +456,24 @@
   function eatTick(dt) {
     var id = hot[sel], it = id ? ITEMS[id] : null;
     if (!(lmb && it && it.eat && count(id) > 0)) { eatT = 0; $('#eat').style.display = 'none'; return; }
+    var mxHp = armorStats().hpMax;
+    if (it.type === 'med' && P.hp >= mxHp) { eatT = 0; $('#eat').style.display = 'none'; if (lmb) { lmb = false; say('Darah sudah penuh.'); } return; }
     eatT += dt; var e = it.eat; $('#eat').style.display = 'block'; $('#eat i').style.width = clamp(eatT / e.t * 100, 0, 100) + '%';
-    $('#eat span').textContent = (it.type === 'drink' ? 'Meminum ' : 'Memakan ') + it.name;
+    $('#eat span').textContent = (it.type === 'med' ? 'Menggunakan ' : it.type === 'drink' ? 'Meminum ' : 'Memakan ') + it.name;
     if (eatT >= e.t) {
-      eatT = 0; take(id, 1); P.hunger = clamp(P.hunger + e.h, 0, 100); P.thirst = clamp(P.thirst + e.th, 0, 100);
-      var msg = it.name + ': ' + (e.h ? '+' + e.h + ' Lapar ' : '') + (e.th ? (e.th > 0 ? '+' : '') + e.th + ' Haus' : '');
-      if (e.poison && rnd() < e.poison) { status.poison = 15; msg += ' - Kamu merasa mual (Keracunan)'; }
-      if (e.stomach && rnd() < e.stomach) { status.stomach = 30; msg += ' - Sakit Perut'; }
-      say(msg, /mual|Sakit/.test(msg)); SFX.play(it.type === 'drink' ? 'drink' : 'eat'); renderHotbar();
+      eatT = 0; take(id, 1);
+      if (it.type === 'med') {
+        P.hp = clamp(P.hp + (e.heal || 30), 0, mxHp);
+        say(it.name + ': +' + (e.heal || 30) + ' Darah'); SFX.play('heal');
+      } else {
+        P.hunger = clamp(P.hunger + (e.h || 0), 0, 100); P.thirst = clamp(P.thirst + (e.th || 0), 0, 100);
+        if (e.comfort) P.comfort = clamp(P.comfort + e.comfort, 0, 100);
+        var msg = it.name + ': ' + (e.h ? '+' + e.h + ' Lapar ' : '') + (e.th ? (e.th > 0 ? '+' : '') + e.th + ' Haus ' : '') + (e.comfort ? '+' + e.comfort + ' Nyaman' : '');
+        if (e.poison && rnd() < e.poison) { status.poison = 15; msg += ' - Keracunan'; }
+        if (e.stomach && rnd() < e.stomach) { status.stomach = 30; msg += ' - Sakit Perut'; }
+        say(msg, /Keracunan|Sakit/.test(msg)); SFX.play(it.type === 'drink' ? 'drink' : 'eat');
+      }
+      renderHotbar();
     }
   }
   function placeBlock() {
@@ -444,13 +486,14 @@
     if (mp.role === 'client') { if (W.getVox(c[0], c[1], c[2])) return; take(id, 1); SFX.play('block'); Net.send({ t: 'place', x: c[0], y: c[1], z: c[2], vt: it.vox, hp: it.hp, item: id }); }
     else {
       if (!W.setVox(c[0], c[1], c[2], it.vox, it.hp)) { say('Tidak bisa membangun di situ.', true); return; }
-      if (it.vox === 3) W.addFurnaceEnt(c[0], c[1], c[2]); voxVer++; take(id, 1); SFX.play('block');
+      voxVer++; take(id, 1); SFX.play('block');
       if (mp.role === 'host') Net.send({ t: 'vox', op: 1, x: c[0], y: c[1], z: c[2], vt: it.vox, hp: it.hp });
     }
   }
   function applySearchEnt(e, targetPid) {
     if (e.searched) { if (targetPid === 'self') say('Sudah diperiksa.'); else if (mp.role === 'host') Net.send({ t: 'say', to: targetPid, msg: 'Sudah diperiksa.' }); return; }
-    var got = {}, rolls = e.k === 'pile' ? 1 : WZ.LOOT.crate1.rolls, key = e.k === 'pile' ? (e.tier === 2 && WZ.LOOT.trash2.enabled ? 'trash2' : 'trash1') : 'crate1';
+    var key = e.k === 'pile' ? (e.tier === 2 && WZ.LOOT.trash2.enabled ? 'trash2' : 'trash1') : (e.tier === 2 ? 'crate2' : 'crate1');
+    var rolls = WZ.LOOT[key].rolls || 1, got = {};
     for (var i = 0; i < rolls; i++) { var id = WZ.rollLoot(key, rnd); got[id] = (got[id] || 0) + 1; }
     Object.keys(got).forEach(function (id) {
       if (targetPid === 'self') { give(id, got[id]); say('+' + got[id] + ' ' + ITEMS[id].name); }
@@ -466,38 +509,48 @@
     else if (e.k === 'bed') { rest = { k: 'sleep', clean: !!e.clean }; P.vx = P.vz = 0; $('#dark').style.opacity = 0.75; say(e.clean ? 'Tidur di kasur bersih. Nyaman & Energi pulih.' : 'Kasur agak kotor: Energi pulih, tapi Nyaman tidak pulih.'); }
     else if (e.k === 'couch') { if (!e.clean) say('Sofa kotor. Tidak memulihkan Nyaman.', true); else { rest = { k: 'sit', clean: true }; P.vx = P.vz = 0; say('Duduk di sofa bersih. Nyaman sedang pulih.'); } }
     else if (e.k === 'furnace') { SFX.play('click'); openInv(); }
+    else if (e.k === 'sink') {
+      var hid = hot[sel];
+      if ((hid === 'dirty_veg' || hid === 'dirty_fruits') && count(hid) > 0) {
+        var outId = hid === 'dirty_veg' ? 'fresh_veg' : 'fresh_fruits';
+        take(hid, 1); give(outId, 1); SFX.play('wash'); say('Dicuci bersih menjadi +1 ' + ITEMS[outId].name + '!');
+      } else { SFX.play('click'); openInv(); }
+    }
   }
 
   function hurt(n) {
-    if (dead) return; P.hp -= n; P.comfort = Math.max(0, P.comfort - 3); if (rest) endRest();
+    if (dead) return;
+    var def = armorStats().def, dmg = n - def;
+    if (dmg <= 0) dmg = 1;
+    P.hp -= dmg; P.comfort = Math.max(0, P.comfort - 3); if (rest) endRest();
     var v = $('#vig'); v.style.opacity = 1; setTimeout(function () { v.style.opacity = 0; }, 180); SFX.play('hurt');
     if (P.hp <= 0) die();
   }
   function die() {
     if (dead) return; dead = true; mode = 'dead'; keys = {}; lmb = false; eatT = 0; $('#eat').style.display = 'none'; $('#dark').style.opacity = 0;
     if (document.pointerLockElement) { try { document.exitPointerLock(); } catch (e) {} }
-    screen('<div class="card"><span class="tag">Kamu Gugur</span><h1>Kota menelanmu.</h1><p>Bertahan: <b>' + fmtTime(T) + '</b> &middot; Kill: <b>' + kills + '</b>. Perkakas &amp; blok aman, namun barang rampasan hilang.</p>' +
+    screen('<div class="card"><span class="tag">Kamu Gugur</span><h1>Kota menelanmu.</h1><p>Bertahan: <b>' + fmtTime(T) + '</b> &middot; Kill: <b>' + kills + '</b>. Perkakas, armor &amp; blok aman, namun barang rampasan hilang.</p>' +
       '<div class="row"><button class="btn primary" id="bResp">Hidup Kembali</button><button class="btn" id="bDeadMenu">Menu Utama</button><a class="btn sm" href="' + esc(C.coreUrl || '../index.html') + '">Kembali ke XKing Core</a></div></div>');
     $('#bResp').onclick = respawn; $('#bDeadMenu').onclick = function () { leaveRoom(); showMainMenu(); };
   }
   function respawn() {
-    Object.keys(inv).forEach(function (id) { var t = ITEMS[id].type; if (t !== 'tool' && t !== 'block') delete inv[id]; });
+    Object.keys(inv).forEach(function (id) { var t = ITEMS[id].type; if (t !== 'tool' && t !== 'block' && t !== 'armor') delete inv[id]; });
     if (!count('rusty_axe') && !count('crude_axe') && !count('iron_axe')) inv.rusty_axe = 1;
     if (!count('rusty_pickaxe') && !count('crude_pickaxe') && !count('iron_pickaxe')) inv.rusty_pickaxe = 1;
     for (var i = 1; i < 8; i++) if (hot[i] && !inv[hot[i]]) hot[i] = null;
-    P.hp = P.hunger = P.thirst = P.energy = P.comfort = 100; status = { poison: 0, stomach: 0 }; dead = false; rest = null; $('#dark').style.opacity = 0;
+    P.hp = armorStats().hpMax; P.hunger = P.thirst = P.energy = P.comfort = 100; status = { poison: 0, stomach: 0 }; dead = false; rest = null; $('#dark').style.opacity = 0;
     if (mp.role === 'solo') { clearZombies(); spawnT = 6; } placeAtSpawn(mp.slot); renderHotbar(); enterGame();
   }
   function stats(dt) {
-    var hm = status.stomach > 0 ? 3 : 1, sl = rest && rest.k === 'sleep';
+    var ast = armorStats(), hm = status.stomach > 0 ? 3 : 1, sl = rest && rest.k === 'sleep';
     P.hunger = Math.max(0, P.hunger - 0.12 * hm * dt); P.thirst = Math.max(0, P.thirst - 0.17 * hm * dt);
-    P.comfort = Math.max(0, P.comfort - 0.05 * dt); P.energy = Math.max(0, P.energy - 0.07 * dt);
+    P.comfort = Math.max(0, P.comfort - 0.05 * ast.comfortDrain * dt); P.energy = Math.max(0, P.energy - 0.07 * dt);
     if (rest) { if (rest.clean) P.comfort = Math.min(100, P.comfort + (sl ? 4 : 2.5) * dt); P.energy = Math.min(100, P.energy + (sl ? 6 : 1.5) * dt); }
     else if (Math.hypot(P.vx, P.vz) < 0.2) P.energy = Math.min(100, P.energy + 0.3 * dt);
-    if (status.poison > 0) { status.poison -= dt; P.hp -= 1.2 * dt; } if (status.stomach > 0) status.stomach -= dt;
+    if (status.poison > 0) { status.poison -= dt; P.hp -= 1.2 * ast.poisonResist * dt; } if (status.stomach > 0) status.stomach -= dt;
     if (P.hunger <= 0) P.hp -= 0.8 * dt; if (P.thirst <= 0) P.hp -= 0.8 * dt;
     if (P.hp <= 0 && !dead) { die(); return; }
-    if (P.hunger > 40 && P.thirst > 40 && status.poison <= 0 && P.hp < 100) P.hp = Math.min(100, P.hp + 0.4 * dt);
+    if (P.hunger > 40 && P.thirst > 40 && status.poison <= 0 && P.hp < ast.hpMax) P.hp = Math.min(ast.hpMax, P.hp + 0.4 * dt);
   }
 
   /* ---------------- Zombie ---------------- */
@@ -574,9 +627,10 @@
       for (var i = 0; i < zombies.length; i++) { var z = zombies[i], dx = z.tx - z.x, dz = z.tz - z.z, mv = Math.hypot(dx, dz); z.x += dx * f; z.z += dz * f; z.g.position.set(z.x, 0, z.z); z.g.rotation.y = z.try; z.anim += dt * (mv > 0.02 ? z.def.spd * 4.5 : 1.5); updateZombieVisuals(z, dt); }
       return;
     }
+    if (T < 30) return; /* 30 detik pertama setelah buat world baru: tidak spawn zombie */
     spawnT -= dt;
-    var cap = Math.min(48, 16 + Math.floor(T / 60) * 3 + (mp.role === 'host' ? (totalPlayers() - 1) * 4 : 0));
-    var interval = Math.max(1.2, 6 - T / 120) * (isNight ? 0.8 : 1);
+    var cap = Math.round(Math.min(48, 16 + Math.floor(T / 60) * 3 + (mp.role === 'host' ? (totalPlayers() - 1) * 4 : 0)) * 0.9);
+    var interval = (Math.max(1.2, 6 - T / 120) / 0.9) * (isNight ? 0.8 : 1);
     if (spawnT <= 0 && zombies.length < cap) { spawnZombie(); spawnT = interval; }
     for (var j = zombies.length - 1; j >= 0; j--) stepZombie(zombies[j], dt);
   }
@@ -613,8 +667,8 @@
   function leaveRoom() { Net.disconnect(); if (mp.joinTimer) { clearTimeout(mp.joinTimer); mp.joinTimer = null; } Object.keys(mp.peers).forEach(removePeer); mp.role = 'solo'; mp.room = ''; mp.slot = 0; mp.online = false; }
   function hostRoom(keep) {
     leaveRoom(); var code = Net.genCode(); mp.role = 'host'; mp.room = code; mp.slot = 0;
-    if (!keep) { W.resetWorld(); newPlayerState(0); T = 0; clearZombies(); for (var i = 0; i < 6; i++) spawnZombie(); }
-    Net.start('host', code, onNetMessage, function (st) { mp.online = st.online; }); enterGame(); say('Room dibuat! Kode: ' + code);
+    if (!keep) { W.resetWorld(); newPlayerState(0); T = 0; spawnT = 3; clearZombies(); }
+    Net.start('host', code, onNetMessage, function (st) { mp.online = st.online; }); enterGame(); say('Room dibuat! Kode: ' + code + (T < 30 ? ' (30 detik masa aman)' : ''));
   }
   function joinRoom(code) {
     leaveRoom(); var norm = Net.normalizeCode(code); mp.role = 'client'; mp.room = norm; mp.lastHostSeen = 0;
@@ -662,7 +716,7 @@
       else if (msg.t === 'search') { var se = (msg.k === 'pile' ? W.piles : W.crates)[msg.idx]; if (se) applySearchEnt(se, msg.f); }
       else if (msg.t === 'place') {
         if (!W.getVox(msg.x, msg.y, msg.z) && !W.hit(msg.x + 0.02, msg.x + 0.98, msg.y + 0.02, msg.y + 0.98, msg.z + 0.02, msg.z + 0.98) && W.setVox(msg.x, msg.y, msg.z, msg.vt, msg.hp)) {
-          if (msg.vt === 3) W.addFurnaceEnt(msg.x, msg.y, msg.z); voxVer++; Net.send({ t: 'vox', op: 1, x: msg.x, y: msg.y, z: msg.z, vt: msg.vt, hp: msg.hp });
+          voxVer++; Net.send({ t: 'vox', op: 1, x: msg.x, y: msg.y, z: msg.z, vt: msg.vt, hp: msg.hp });
         } else if (msg.item) Net.send({ t: 'give', to: msg.f, id: msg.item, n: 1 });
       }
       return;
@@ -675,8 +729,8 @@
         (msg.a || []).forEach(function (a) { var id = a[0], z = zMap[id]; sz[id] = true; if (!z) { z = makeZombie(ZTYPES[a[1]] || 'walker', a[2], a[3], id); z.hp = a[5]; z.try = a[4]; z.g.rotation.y = a[4]; zombies.push(z); } else { if (a[5] < z.hp) z.flash = 0.14; z.tx = a[2]; z.tz = a[3]; z.try = a[4]; z.hp = a[5]; } });
         for (var i = zombies.length - 1; i >= 0; i--) if (!sz[zombies[i].id]) { scene.remove(zombies[i].g); delete zMap[zombies[i].id]; zombies.splice(i, 1); }
       } else if (msg.t === 'vox') {
-        if (msg.op === 1) { if (!W.getVox(msg.x, msg.y, msg.z) && W.setVox(msg.x, msg.y, msg.z, msg.vt, msg.hp)) { if (msg.vt === 3) W.addFurnaceEnt(msg.x, msg.y, msg.z); voxVer++; } }
-        else if (msg.op === 0) { var dv = W.getVox(msg.x, msg.y, msg.z); if (dv) { W.delVox(msg.x, msg.y, msg.z); voxVer++; if (dv.t === 3) W.furn.forEach(function (f) { if (f.alive && f.vx === msg.x && f.vy === msg.y && f.vz === msg.z) f.alive = false; }); } }
+        if (msg.op === 1) { if (!W.getVox(msg.x, msg.y, msg.z) && W.setVox(msg.x, msg.y, msg.z, msg.vt, msg.hp)) voxVer++; }
+        else if (msg.op === 0) { if (W.getVox(msg.x, msg.y, msg.z)) { W.delVox(msg.x, msg.y, msg.z); voxVer++; } }
         else if (msg.op === 2) { var hv = W.getVox(msg.x, msg.y, msg.z); if (hv) hv.hp = msg.hp; }
       } else if (msg.t === 'ent') {
         if (msg.k === 'tree') { var tr = W.trees[msg.idx]; if (tr) { tr.hp = msg.hp; tr.given = msg.given; if (tr.alive !== msg.alive) W.setTree(tr, msg.alive); } }
@@ -699,43 +753,67 @@
     if (mp.role === 'host' && now - mp.lastZSent >= 115) { mp.lastZSent = now; Net.send({ t: 'zs', T: Math.round(T * 10) / 10, a: packZombies() }); }
   }
 
-  /* ---------------- Tas & Crafting ---------------- */
-  function nearFurnace() { for (var i = 0; i < W.furn.length; i++) { var f = W.furn[i]; if (f.alive && Math.hypot(f.x - P.x, f.z - P.z) < 5.5) return true; } return false; }
+  /* ---------------- Tas, Armor & Crafting ---------------- */
+  function nearArr(arr) { for (var i = 0; i < arr.length; i++) { var f = arr[i]; if (f.alive && Math.hypot(f.x - P.x, f.z - P.z) < 5.5) return true; } return false; }
   function openInv() { mode = 'inv'; keys = {}; lmb = false; eatT = 0; queue.length = 0; $('#eat').style.display = 'none'; if (document.pointerLockElement) { try { document.exitPointerLock(); } catch (e) {} } $('#screen').hidden = true; $('#inv').hidden = false; renderInv(); }
   function closeInv() { $('#inv').hidden = true; enterGame(); }
   function costHtml(r) { return Object.keys(r.cost).map(function (id) { var have = count(id); return '<span class="' + (have >= r.cost[id] ? 'ok' : 'no') + '">' + ITEMS[id].ic + ' ' + have + '/' + r.cost[id] + ' ' + ITEMS[id].name + '</span>'; }).join(' &middot; '); }
   function detailHtml(id) {
-    if (!id || !ITEMS[id]) return '<span class="m">Klik item untuk melihat statistiknya.</span>';
+    if (!id || !ITEMS[id]) return '<span class="m">Klik item untuk melihat statistiknya. Klik armor untuk langsung memakainya.</span>';
     var it = ITEMS[id], s = '<h3>' + it.ic + ' ' + esc(it.name) + '</h3><div>' + esc(it.desc) + '</div>';
-    if (it.eat) { var e = it.eat; s += '<div class="m">Durasi: ' + e.t + ' dtk &middot; Lapar: ' + e.h + ' &middot; Haus: ' + e.th + (e.poison ? ' &middot; ' + Math.round(e.poison * 100) + '% Keracunan' : '') + (e.stomach ? ' &middot; ' + Math.round(e.stomach * 100) + '% Sakit Perut' : '') + '</div>'; }
+    if (it.eat) {
+      var e = it.eat;
+      s += '<div class="m">Durasi: ' + e.t + ' dtk' + (e.heal ? ' &middot; Pulihkan Darah: +' + e.heal : '') + (e.h ? ' &middot; Lapar: +' + e.h : '') + (e.th ? ' &middot; Haus: ' + (e.th > 0 ? '+' : '') + e.th : '') + (e.comfort ? ' &middot; Nyaman: +' + e.comfort : '') + (e.poison ? ' &middot; ' + Math.round(e.poison * 100) + '% Keracunan' : '') + (e.stomach ? ' &middot; ' + Math.round(e.stomach * 100) + '% Sakit Perut' : '') + '</div>';
+    }
+    if (it.type === 'armor') s += '<div class="m">Defense: +' + it.def + ' &middot; Klik item untuk pasang/lepas ke slot ' + esc(it.slot) + '</div>';
     if (it.tool) s += '<div class="m">Daya Hancur: ' + it.bd + ' &middot; Damage: ' + it.dmg + '</div>';
     if (it.note) s += '<div class="m">' + esc(it.note) + '</div>';
     return s;
   }
   function renderInv() {
     var ids = Object.keys(inv).filter(function (id) { return inv[id] > 0 && ITEMS[id]; });
-    var h = '<div class="inv-wrap"><div class="top"><h2 style="margin:0">Tas &amp; Crafting</h2><div class="row" style="display:flex;gap:8px"><button class="btn primary" id="bBack">Kembali (Tab)</button></div></div><div class="box"><h2>Hotbar</h2><div class="hb">';
+    var ast = armorStats(), slots = [['head', 'Kepala'], ['chest', 'Badan'], ['legs', 'Kaki'], ['boots', 'Sepatu']], nf = nearArr(W.furn), ns = nearArr(W.sinks);
+    var buffs = ['DEF: ' + ast.def];
+    if (ast.woodN > 0) buffs.push('Kayu (' + ast.woodN + '/4): Kecepatan +' + (ast.woodN * 3) + '%, Hemat Energi & Nyaman ' + (ast.woodN * 6) + '%');
+    if (ast.ironN > 0) buffs.push('Besi (' + ast.ironN + '/4): Maks HP ' + ast.hpMax + ', Melee +' + (ast.ironN * 6) + '%, Tahan Racun ' + Math.round(ast.ironN * 12.5) + '%');
+
+    var h = '<div class="inv-wrap"><div class="top"><h2 style="margin:0">Tas, Armor &amp; Crafting</h2><div class="row" style="display:flex;gap:8px"><button class="btn primary" id="bBack">Kembali (Tab)</button></div></div><div class="box"><h2>Armor Dipakai (Klik untuk melepas)</h2><div class="eq-row">';
+    slots.forEach(function (sl) { var id = equip[sl[0]], it = id ? ITEMS[id] : null; h += '<button class="eq-slot' + (it ? ' on' : '') + '" data-eq="' + sl[0] + '"><b>' + (it ? it.ic : '▫') + '</b><span>' + (it ? esc(it.name) : sl[1]) + '</span><small>' + (it ? 'DEF +' + it.def : 'Kosong') + '</small></button>'; });
+    h += '</div><div class="eq-buff">' + esc(buffs.join(' · ')) + '</div><h2>Hotbar</h2><div class="hb">';
     for (var i = 0; i < 8; i++) { var hid = hot[i] || (i === 0 ? 'fists' : null); h += '<div class="slot' + (i === sel ? ' sel' : '') + '" data-slot="' + i + '"><small>' + (i + 1) + '</small>' + (hid ? ITEMS[hid].ic : '') + '</div>'; }
-    h += '</div><p class="m" style="color:var(--muted);font-size:.8rem;margin:0 0 10px">Klik slot hotbar, lalu klik item untuk memasangnya.</p><h2>Daftar Barang</h2>';
+    h += '</div><p class="m" style="color:var(--muted);font-size:.8rem;margin:0 0 10px">Klik slot hotbar, lalu klik item untuk memasangnya (armor langsung terpasang).</p><h2>Daftar Barang</h2>';
     h += ids.length ? '<div class="items">' + ids.map(function (id) { var it = ITEMS[id]; return '<button class="it" data-item="' + id + '"><b>' + it.ic + '</b>' + esc(it.name) + '<em>' + inv[id] + '</em></button>'; }).join('') + '</div>' : '<p class="m" style="color:var(--muted)">Tas kosong.</p>';
-    h += '<div class="detail" id="detail">' + detailHtml(selItem) + '</div></div><div class="box"><h2>Crafting</h2>' + WZ.RECIPES.map(function (r) {
-      var out = ITEMS[r.out[0]], can = Object.keys(r.cost).every(function (id) { return count(id) >= r.cost[id]; }) && (!r.furnace || nearFurnace());
-      return '<div class="rec"><div><b>' + out.ic + ' ' + esc(r.label || out.name) + (r.out[1] > 1 ? ' x' + r.out[1] : '') + '</b><div class="cost">' + costHtml(r) + (r.furnace ? '<br>' + (nearFurnace() ? 'Tungku tersedia' : 'Butuh Tungku Pelebur') : '') + '</div></div><button class="btn' + (can ? ' primary' : '') + '" data-craft="' + r.id + '"' + (can ? '' : ' disabled') + '>' + (r.furnace ? 'Lebur' : 'Buat') + '</button></div>';
+    h += '<div class="detail" id="detail">' + detailHtml(selItem) + '</div></div><div class="box"><h2>Crafting &amp; Stasiun</h2>' + WZ.RECIPES.map(function (r) {
+      var out = ITEMS[r.out[0]], stOk = (!r.furnace || nf) && (!r.sink || ns), can = Object.keys(r.cost).every(function (id) { return count(id) >= r.cost[id]; }) && stOk;
+      var req = r.furnace ? '<br>' + (nf ? 'Tungku tersedia' : 'Butuh Tungku Pelebur') : (r.sink ? '<br>' + (ns ? 'Wastafel tersedia (Gratis!)' : 'Butuh Wastafel (Sink) di dekatmu') : '');
+      var btn = r.furnace ? 'Lebur' : (r.sink ? 'Cuci' : 'Buat');
+      return '<div class="rec"><div><b>' + out.ic + ' ' + esc(r.label || out.name) + (r.out[1] > 1 ? ' x' + r.out[1] : '') + '</b><div class="cost">' + costHtml(r) + req + '</div></div><button class="btn' + (can ? ' primary' : '') + '" data-craft="' + r.id + '"' + (can ? '' : ' disabled') + '>' + btn + '</button></div>';
     }).join('') + '<p class="m" style="color:var(--muted);font-size:.8rem">Sampah Tier 3 &amp; Meja Komputer segera hadir.</p></div></div>';
     $('#inv').innerHTML = h; $('#bBack').onclick = closeInv;
   }
   document.addEventListener('click', function (ev) {
-    if (mode !== 'inv') return; var t = ev.target.closest('[data-item],[data-slot],[data-craft]'); if (!t) return;
+    if (mode !== 'inv') return; var t = ev.target.closest('[data-item],[data-slot],[data-craft],[data-eq]'); if (!t) return;
+    if (t.dataset.eq) {
+      var sl = t.dataset.eq, cur = equip[sl]; if (!cur) return;
+      equip[sl] = null; give(cur, 1); P.hp = Math.min(P.hp, armorStats().hpMax); SFX.play('click'); renderStats(); renderInv(); return;
+    }
     if (t.dataset.slot != null) { sel = +t.dataset.slot; SFX.play('click'); renderHotbar(); renderInv(); return; }
     if (t.dataset.item) {
       var id = t.dataset.item, it = ITEMS[id]; selItem = id; SFX.play('click');
-      if (it.type !== 'material') { var s = sel === 0 ? 1 : sel; for (var i = 0; i < 8; i++) if (hot[i] === id) hot[i] = null; hot[s] = id; if (sel === 0) sel = 1; renderHotbar(); }
+      if (it.type === 'armor') {
+        var prevEq = equip[it.slot]; take(id, 1); if (prevEq) give(prevEq, 1); equip[it.slot] = id;
+        say('Memakai ' + it.name + ' (DEF ' + armorStats().def + ')'); renderStats();
+      } else if (it.type !== 'material') {
+        var s = sel === 0 ? 1 : sel; for (var i = 0; i < 8; i++) if (hot[i] === id) hot[i] = null; hot[s] = id; if (sel === 0) sel = 1; renderHotbar();
+      }
       renderInv(); return;
     }
     if (t.dataset.craft) {
-      var r = WZ.RECIPES.filter(function (x) { return x.id === t.dataset.craft; })[0]; if (!r || !Object.keys(r.cost).every(function (k) { return count(k) >= r.cost[k]; }) || (r.furnace && !nearFurnace())) return;
+      var r = WZ.RECIPES.filter(function (x) { return x.id === t.dataset.craft; })[0];
+      if (!r || !Object.keys(r.cost).every(function (k) { return count(k) >= r.cost[k]; }) || (r.furnace && !nearArr(W.furn)) || (r.sink && !nearArr(W.sinks))) return;
       Object.keys(r.cost).forEach(function (k) { take(k, r.cost[k]); }); give(r.out[0], r.out[1]);
-      say('Berhasil membuat ' + ITEMS[r.out[0]].name + (r.out[1] > 1 ? ' x' + r.out[1] : '')); SFX.play('craft'); renderInv();
+      say((r.sink ? 'Dicuci: ' : 'Berhasil membuat ') + ITEMS[r.out[0]].name + (r.out[1] > 1 ? ' x' + r.out[1] : ''));
+      SFX.play(r.sink ? 'wash' : 'craft'); renderInv();
     }
   });
 
@@ -762,11 +840,17 @@
       else if (h.kind === 'vox') { var c = unkey(h.key), v = W.getVox(c[0], c[1], c[2]); if (v) txt = VNAME[v.t] + '  Ketahanan ' + Math.max(0, Math.round(v.hp)); }
       else if (h.kind === 'ent') {
         var e = h.e;
-        if (e.k === 'pile') txt = e.searched ? 'Sampah sudah diperiksa' : '[E] Periksa sampah (Tier ' + e.tier + ')';
-        else if (e.k === 'crate') txt = e.searched ? 'Peti kosong' : '[E] Buka peti kayu';
+        if (e.vx != null) {
+          var bv = W.getVox(e.vx, e.vy, e.vz), hpTxt = bv ? ' (' + Math.max(0, Math.round(bv.hp)) + ')' : '';
+          if (e.k === 'furnace') txt = 'Tungku' + hpTxt + ' · [E] Buka · Klik Kiri: Bongkar';
+          else if (e.k === 'bed') txt = 'Kasur' + hpTxt + ' · [E] Tidur · Klik Kiri: Bongkar';
+          else if (e.k === 'couch') txt = 'Sofa' + hpTxt + ' · [E] Duduk · Klik Kiri: Bongkar';
+          else if (e.k === 'sink') { var hid = hot[sel]; txt = (hid === 'dirty_veg' || hid === 'dirty_fruits') ? 'Wastafel' + hpTxt + ' · [E] Cuci Sekarang · Klik Kiri: Bongkar' : 'Wastafel' + hpTxt + ' · [E] Buka Wastafel · Klik Kiri: Bongkar'; }
+        }
+        else if (e.k === 'pile') txt = e.searched ? 'Sampah sudah diperiksa' : '[E] Periksa sampah (Tier ' + e.tier + ')';
+        else if (e.k === 'crate') txt = e.searched ? 'Peti kosong' : '[E] Buka peti kayu (Tier ' + (e.tier || 1) + ')';
         else if (e.k === 'bed') txt = e.clean ? '[E] Tidur di kasur bersih' : '[E] Tidur di kasur lusuh';
         else if (e.k === 'couch') txt = e.clean ? '[E] Duduk di sofa bersih' : 'Sofa kotor (tidak memulihkan Nyaman)';
-        else if (e.k === 'furnace') txt = '[E] Gunakan Tungku Pelebur';
         else if (e.k === 'tree') txt = 'Pohon  Ketahanan ' + Math.max(0, Math.round(e.hp)) + '/' + e.max + (curItem().tool === 'axe' ? '' : '  (butuh kapak)');
         else if (e.k === 'rock') txt = (e.ore ? 'Bijih Besi' : 'Batu') + '  Ketahanan ' + Math.max(0, Math.round(e.hp)) + '/' + e.max + (curItem().tool === 'pick' ? '' : '  (butuh beliung)');
       }
@@ -823,13 +907,13 @@
   function boot() {
     try {
       if (!window.THREE) throw new Error('Three.js belum termuat.');
-      initThree(); newPlayerState(0); renderHotbar(); renderStats(); for (var i = 0; i < 6; i++) spawnZombie();
+      initThree(); newPlayerState(0); renderHotbar(); renderStats();
       clock.last = performance.now(); requestAnimationFrame(frame); showMainMenu();
     } catch (e) {
       screen('<div class="card"><h1><b>Webzombite</b>-Lite</h1><p>Gagal memulai tampilan 3D.</p><pre style="white-space:pre-wrap;font-size:12px;opacity:.85">' + esc(e && e.message ? e.message : e) + '</pre><div class="row"><a class="btn sm" href="' + esc(C.coreUrl || '../index.html') + '">Kembali ke XKing Core</a></div></div>');
     }
   }
-  window.WZ.debug = function () { return { scene: scene, renderer: renderer, camera: camera, P: P, zombies: zombies, inv: inv, W: W, mp: mp }; };
+  window.WZ.debug = function () { return { scene: scene, renderer: renderer, camera: camera, P: P, zombies: zombies, inv: inv, equip: equip, W: W, mp: mp }; };
   window.WZ.started = true;
   boot();
 })();

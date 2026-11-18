@@ -1,4 +1,4 @@
-/* AWAL world.js - Webzombite-Lite (Fix InstancedMesh r128 + Random Spawn + Rumah Bervariasi) */
+/* AWAL world.js - Webzombite-Lite */
 (function (WZ) {
   'use strict';
   WZ.HALF = 250; WZ.SPAWN_HALF = 262.5;
@@ -16,7 +16,7 @@
     var R = mulberry(20261116), ANISO = Math.min(4, maxAniso || 4);
     function rr(a, b, rng) { return a + (rng || R)() * (b - a); }
     function pick(a, rng) { var fn = rng || R; return a[(fn() * a.length) | 0]; }
-    var W = { half: WZ.HALF, ents: [], trees: [], rocks: [], piles: [], crates: [], furn: [], rects: [], roads: [], spawn: { x: -32, y: 0, z: 32 }, seed: 0 };
+    var W = { half: WZ.HALF, ents: [], trees: [], rocks: [], piles: [], crates: [], furn: [], sinks: [], bents: [], rects: [], roads: [], spawn: { x: -32, y: 0, z: 32 }, seed: 0 };
     var ROADS = [-224, -160, -96, -32, 32, 96, 160, 224], RW = 10; W.roads = ROADS;
 
     var CELL = 8, sgrid = new Map();
@@ -64,8 +64,7 @@
         m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
         if (m.instanceColor.setUsage) m.instanceColor.setUsage(u);
       }
-      m.count = 0; m.frustumCulled = false;
-      scene.add(m); return m;
+      m.count = 0; m.frustumCulled = false; scene.add(m); return m;
     }
     function put(m, x, y, z, sx, sy, sz, ry, col, at) {
       var cap = m.instanceMatrix.count, i = at == null ? m.count : at;
@@ -140,14 +139,33 @@
       g.fillStyle = '#262320'; g.fillRect(28, 52, 72, 58); g.fillStyle = '#ff6a14'; g.fillRect(36, 62, 56, 40); g.fillStyle = '#ffe078'; g.fillRect(48, 76, 32, 22);
       g.fillStyle = '#736d68'; for (var rx = 14; rx <= 114; rx += 20) { g.fillRect(rx, 14, 4, 4); g.fillRect(rx, 110, 4, 4); }
     });
+    var bedTex = canvasTex(128, 128, function (g, w, h) {
+      g.fillStyle = '#855832'; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#ece6d8'; g.fillRect(8, 8, w - 16, 42);
+      g.fillStyle = '#4a7a5c'; g.fillRect(8, 52, w - 16, 68);
+      g.fillStyle = '#6b9e7e'; g.fillRect(14, 58, w - 28, 12);
+      g.strokeStyle = '#4f3219'; g.lineWidth = 5; g.strokeRect(4, 4, w - 8, h - 8);
+    });
+    var couchTex = canvasTex(128, 128, function (g, w, h) {
+      g.fillStyle = '#5a7852'; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#76996c'; g.fillRect(10, 12, w - 20, 52); g.fillRect(10, 68, w - 20, 48);
+      g.strokeStyle = '#3a5234'; g.lineWidth = 4; g.strokeRect(10, 12, w - 20, 52); g.strokeRect(10, 68, w - 20, 48);
+      g.fillStyle = '#6b4928'; g.fillRect(0, 114, w, 14);
+    });
+    var sinkTex = canvasTex(128, 128, function (g, w, h) {
+      g.fillStyle = '#c4cbd1'; g.fillRect(0, 0, w, h);
+      g.strokeStyle = '#6c757d'; g.lineWidth = 4; g.strokeRect(3, 3, w - 6, h - 6);
+      g.fillStyle = '#7c868e'; g.fillRect(18, 22, w - 36, 70);
+      g.fillStyle = '#49a6e8'; g.fillRect(24, 30, w - 48, 54);
+      g.fillStyle = '#e2e8ed'; g.fillRect(58, 10, 12, 26); g.fillStyle = '#49a6e8'; g.fillRect(61, 36, 6, 12);
+    });
     var houseWallTex = canvasTex(128, 128, function (g, w, h) {
       var r = mulberry(9); g.fillStyle = '#f2eee6'; g.fillRect(0, 0, w, h);
       for (var y = 0; y < h; y += 16) { g.fillStyle = 'rgba(0,0,0,.1)'; g.fillRect(0, y, w, 2); g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(0, y + 2, w, 2); }
       for (var i = 0; i < 360; i++) { g.fillStyle = r() < 0.5 ? 'rgba(0,0,0,.07)' : 'rgba(255,255,255,.12)'; g.fillRect(r() * w, r() * h, 2 + r() * 5, 2 + r() * 3); }
     });
     var winTex = canvasTex(64, 64, function (g, w, h) {
-      g.fillStyle = '#f2ede2'; g.fillRect(0, 0, w, h);
-      g.fillStyle = '#4a6b82'; g.fillRect(7, 7, w - 14, h - 14);
+      g.fillStyle = '#f2ede2'; g.fillRect(0, 0, w, h); g.fillStyle = '#4a6b82'; g.fillRect(7, 7, w - 14, h - 14);
       g.fillStyle = 'rgba(210,240,255,.32)'; g.fillRect(10, 10, 18, h - 22);
       g.fillStyle = '#e5dfd2'; g.fillRect(w / 2 - 2, 5, 4, h - 10); g.fillRect(5, h / 2 - 2, w - 10, 4);
     });
@@ -230,7 +248,7 @@
 
     var HOUSE_COLS = [0xe8dcc4, 0xd47a66, 0x88b394, 0x7da4c4, 0xdeb664, 0xd19464, 0xcfd4d9, 0xba8b5e];
     var HOUSE_ROOFS = [0x8a4b3e, 0x526575, 0x6b6358, 0x546b4d, 0x7a5b40];
-    function house(px, pz, face) {
+    function house(px, pz, face, zn) {
       var hw = rr(12, 15), hd = rr(10, 12), x0 = px - hw / 2, x1 = px + hw / 2, z0 = pz - hd / 2, z1 = pz + hd / 2, t = 0.4, H = 3.2;
       var col = pick(HOUSE_COLS), roofCol = pick(HOUSE_ROOFS);
       occupied.push([x0 - 1, x1 + 1, z0 - 1, z1 + 1]); W.rects.push({ x0: x0, x1: x1, z0: z0, z1: z1, c: '#' + ('000000' + col.toString(16)).slice(-6) });
@@ -248,7 +266,7 @@
       var bx = cx + (backx ? backx * (hw / 2 - 1.6) : -hw / 4), bz = cz + (back ? back * (hd / 2 - 1.2) : -hd / 4); addBed(bx, bz, R() < 0.5);
       var kx = cx + (backx ? backx * (hw / 2 - 1.2) : hw / 4), kz = cz + (back ? back * (hd / 2 - 1.2) : hd / 4) + (backx ? 3 : 0);
       if (backx || back) addCouch(kx + (backx ? 0 : 1), kz, R() < 0.5);
-      if (R() < 0.6) { var crx = cx + rr(-hw / 4, hw / 4), crz = cz + rr(-hd / 5, hd / 5); if (Math.hypot(crx - bx, crz - bz) > 1.8) addCrate(crx, crz, false); }
+      if (R() < 0.6) { var crx = cx + rr(-hw / 4, hw / 4), crz = cz + rr(-hd / 5, hd / 5); if (Math.hypot(crx - bx, crz - bz) > 1.8) addCrate(crx, crz, false, null, zn === 'mid' && R() < 0.5 ? 2 : 1); }
     }
 
     var egrid = new Map();
@@ -299,16 +317,31 @@
       W.setPile(p, true); addEnt(p); W.piles.push(p);
     }
 
-    var crateM = inst(box1, lam(0xffffff, { map: crateTex }), 250, true, true), lidM = inst(box1, lam(0x4f361c), 250, true, false);
-    W.setCrate = function (c, full) { put(crateM, c.x, full ? 0.45 : 0.3, c.z, 0.9, full ? 0.9 : 0.6, 0.9, c.ry, full ? 0xffffff : 0x8a7558, c.ix); put(lidM, c.x, full ? 0.92 : -5, c.z, 0.98, 0.1, 0.98, c.ry, null, c.ix); c.searched = !full; };
-    function addCrate(x, z, isDyn, rng) {
-      var fn = rng || R, c = { k: 'crate', idx: W.crates.length, x: x, z: z, y: 0, r: 0.75, h: 0.9, alive: true, dyn: !!isDyn, searched: false, respawn: 0, ry: fn() * 3 };
+    var crateM = inst(box1, lam(0xffffff, { map: crateTex }), 250, true, true), lidM = inst(box1, lam(0xffffff), 250, true, true);
+    W.setCrate = function (c, full) {
+      var bodyCol = c.tier === 2 ? (full ? 0xffdf9e : 0x99845a) : (full ? 0xffffff : 0x8a7558);
+      var lidCol = c.tier === 2 ? 0x3b4859 : 0x4f361c;
+      put(crateM, c.x, full ? 0.45 : 0.3, c.z, 0.9, full ? 0.9 : 0.6, 0.9, c.ry, bodyCol, c.ix);
+      put(lidM, c.x, full ? 0.92 : -5, c.z, 0.98, 0.1, 0.98, c.ry, lidCol, c.ix);
+      c.searched = !full;
+    };
+    function addCrate(x, z, isDyn, rng, tier) {
+      var fn = rng || R, c = { k: 'crate', idx: W.crates.length, tier: tier || 1, x: x, z: z, y: 0, r: 0.75, h: 0.9, alive: true, dyn: !!isDyn, searched: false, respawn: 0, ry: fn() * 3 };
       c.ix = crateM.count++; lidM.count++; addBox(x - 0.45, x + 0.45, 0, 0.9, z - 0.45, z + 0.45, !!isDyn);
       W.setCrate(c, true); addEnt(c); W.crates.push(c);
     }
-    W.addFurnaceEnt = function (x, y, z) { var e = { k: 'furnace', x: x + 0.5, z: z + 0.5, y: y, r: 0.9, h: 1, alive: true, dyn: true, vx: x, vy: y, vz: z }; addEnt(e); W.furn.push(e); return e; };
 
-    /* Tata letak kota tetap (template default) */
+    function addBlockEnt(x, y, z, t) {
+      var kind = t === 3 ? 'furnace' : t === 4 ? 'bed' : t === 5 ? 'couch' : t === 6 ? 'sink' : null;
+      if (!kind) return null;
+      var e = { k: kind, x: x + 0.5, z: z + 0.5, y: y, r: 0.85, h: 1, clean: true, alive: true, dyn: true, vx: x, vy: y, vz: z };
+      addEnt(e); W.bents.push(e);
+      if (t === 3) W.furn.push(e);
+      else if (t === 6) W.sinks.push(e);
+      return e;
+    }
+
+    /* Tata letak kota tetap */
     for (var a = 0; a <= ROADS.length; a++) for (var b = 0; b <= ROADS.length; b++) {
       var lx0 = a === 0 ? -250 : ROADS[a - 1] + RW / 2, lx1 = a === ROADS.length ? 250 : ROADS[a] - RW / 2;
       var lz0 = b === 0 ? -250 : ROADS[b - 1] + RW / 2, lz1 = b === ROADS.length ? 250 : ROADS[b] - RW / 2;
@@ -321,10 +354,10 @@
       } else if (zone === 'mid') {
         var roll = R();
         if (roll < 0.3) tallBuilding(bx0 + 2, bx1 - 2, bz0 + 2, bz1 - 2, rr(10, 24));
-        else if (roll < 0.9) { var mx2 = (bx0 + bx1) / 2, mz2 = (bz0 + bz1) / 2; [[mx2 - 12, mz2 - 12], [mx2 + 12, mz2 - 12], [mx2 - 12, mz2 + 12], [mx2 + 12, mz2 + 12]].forEach(function (q, qi) { if (R() < 0.85) house(q[0] + rr(-1.5, 1.5), q[1] + rr(-1.5, 1.5), qi < 2 ? 's' : 'n'); }); }
+        else if (roll < 0.9) { var mx2 = (bx0 + bx1) / 2, mz2 = (bz0 + bz1) / 2; [[mx2 - 12, mz2 - 12], [mx2 + 12, mz2 - 12], [mx2 - 12, mz2 + 12], [mx2 + 12, mz2 + 12]].forEach(function (q, qi) { if (R() < 0.85) house(q[0] + rr(-1.5, 1.5), q[1] + rr(-1.5, 1.5), qi < 2 ? 's' : 'n', 'mid'); }); }
       } else {
         var mx3 = (bx0 + bx1) / 2, mz3 = (bz0 + bz1) / 2;
-        [[mx3 - 12, mz3 - 12], [mx3 + 12, mz3 - 12], [mx3 - 12, mz3 + 12], [mx3 + 12, mz3 + 12]].forEach(function (q) { if (R() < 0.55) house(q[0] + rr(-2, 2), q[1] + rr(-2, 2), pick(['n', 's', 'e', 'w'])); });
+        [[mx3 - 12, mz3 - 12], [mx3 + 12, mz3 - 12], [mx3 - 12, mz3 + 12], [mx3 + 12, mz3 + 12]].forEach(function (q) { if (R() < 0.55) house(q[0] + rr(-2, 2), q[1] + rr(-2, 2), pick(['n', 's', 'e', 'w']), 'out'); });
       }
     }
     facadeBuckets.forEach(function (bk, fi) {
@@ -371,15 +404,22 @@
       }
       var cr = 0; tries = 0;
       while (cr < 90 && tries++ < 8000) {
-        var qx = rr(-240, 240, Rn), qz = rr(-240, 240, Rn);
-        if (onRoad(qx, qz, 1) || inOcc(qx, qz, 1) || zoneOf(qx, qz) === 'down') continue;
-        addCrate(qx, qz, true, Rn); cr++;
+        var qx = rr(-240, 240, Rn), qz = rr(-240, 240, Rn), czn = zoneOf(qx, qz);
+        if (onRoad(qx, qz, 1) || inOcc(qx, qz, 1) || (czn === 'down' && Rn() < 0.65)) continue;
+        addCrate(qx, qz, true, Rn, czn === 'down' ? 2 : (czn === 'mid' && Rn() < 0.5 ? 2 : 1)); cr++;
       }
     }
     spawnNature(initSeed != null ? initSeed : rndSeed());
 
-    var VM = { 1: inst(box1, lam(0xffffff, { map: plankTex }), 2800, true, false), 2: inst(box1, lam(0xffffff, { map: stoneTex }), 2800, true, false), 3: inst(box1, lam(0xffffff, { map: furnTex }), 150, true, false) };
-    var vkeys = { 1: [], 2: [], 3: [] }, vcount = 0; W.MAX_VOX = 2600;
+    var VM = {
+      1: inst(box1, lam(0xffffff, { map: plankTex }), 2600, true, false),
+      2: inst(box1, lam(0xffffff, { map: stoneTex }), 2600, true, false),
+      3: inst(box1, lam(0xffffff, { map: furnTex }), 150, true, false),
+      4: inst(box1, lam(0xffffff, { map: bedTex }), 200, true, false),
+      5: inst(box1, lam(0xffffff, { map: couchTex }), 200, true, false),
+      6: inst(box1, lam(0xffffff, { map: sinkTex }), 120, true, false)
+    };
+    var vkeys = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] }, vcount = 0; W.MAX_VOX = 2600;
     W.voxCount = function () { return vcount; };
     W.getVox = function (x, y, z) { return vox.get(vk(x, y, z)) || null; };
     W.setVox = function (x, y, z, t, hp) {
@@ -387,37 +427,43 @@
       var k = vk(x, y, z); if (vox.has(k)) return false;
       var arr = vkeys[t]; if (!arr || arr.length >= VM[t].instanceMatrix.count) return false;
       var idx = arr.length; arr.push([x, y, z]); vox.set(k, { t: t, hp: hp, idx: idx });
-      put(VM[t], x + 0.5, y + 0.5, z + 0.5, 1, 1, 1, 0, null, idx); VM[t].count = arr.length; vcount++; return true;
+      put(VM[t], x + 0.5, y + 0.5, z + 0.5, 1, 1, 1, 0, null, idx); VM[t].count = arr.length; vcount++;
+      if (t >= 3) addBlockEnt(x, y, z, t);
+      return true;
     };
     W.delVox = function (x, y, z) {
       var k = vk(x, y, z), v = vox.get(k); if (!v) return null;
       var arr = vkeys[v.t], last = arr.pop(), m = VM[v.t];
       if (v.idx !== arr.length) { arr[v.idx] = last; vox.get(vk(last[0], last[1], last[2])).idx = v.idx; put(m, last[0] + 0.5, last[1] + 0.5, last[2] + 0.5, 1, 1, 1, 0, null, v.idx); }
-      m.count = arr.length; m.instanceMatrix.needsUpdate = true; vox.delete(k); vcount--; return v;
+      m.count = arr.length; m.instanceMatrix.needsUpdate = true; vox.delete(k); vcount--;
+      if (v.t >= 3) W.bents.forEach(function (e) { if (e.alive && e.vx === x && e.vy === y && e.vz === z) e.alive = false; });
+      return v;
     };
     W.voxList = function () {
-      var HP = { 1: 30, 2: 90, 3: 80 }, out = [];
-      vox.forEach(function (v) { var a = vkeys[v.t][v.idx], p = ((a[0] + 256) * 1024 + (a[2] + 256)) * 256 + a[1] * 4 + (v.t - 1); out.push(Math.round(v.hp) < HP[v.t] ? [p, Math.max(1, Math.round(v.hp))] : p); });
+      var HP = { 1: 30, 2: 90, 3: 80, 4: 50, 5: 45, 6: 60 }, out = [];
+      vox.forEach(function (v) {
+        var a = vkeys[v.t][v.idx], p = ((a[0] + 256) * 1024 + (a[2] + 256)) * 1024 + a[1] * 16 + (v.t - 1);
+        out.push(Math.round(v.hp) < HP[v.t] ? [p, Math.max(1, Math.round(v.hp))] : p);
+      });
       return out;
     };
-    W.voxLoad = function (list) {
+    W.voxLoad = function (list, ver) {
       if (!Array.isArray(list)) return;
-      var HP = { 1: 30, 2: 90, 3: 80 };
+      var HP = { 1: 30, 2: 90, 3: 80, 4: 50, 5: 45, 6: 60 }, v2 = (ver || 1) >= 2;
       list.forEach(function (en) {
-        var n = Array.isArray(en) ? en[0] : en, hp = Array.isArray(en) ? en[1] : null;
-        var t = (n % 4) + 1, y = ((n / 4) | 0) % 64, r = Math.floor(n / 256), z = (r % 1024) - 256, x = Math.floor(r / 1024) - 256;
-        if (t >= 1 && t <= 3 && W.setVox(x, y, z, t, hp != null ? hp : HP[t]) && t === 3) W.addFurnaceEnt(x, y, z);
+        var n = Array.isArray(en) ? en[0] : en, hp = Array.isArray(en) ? en[1] : null, t, y, r, z, x;
+        if (v2) { t = (n % 16) + 1; y = ((n / 16) | 0) % 64; r = Math.floor(n / 1024); z = (r % 1024) - 256; x = Math.floor(r / 1024) - 256; }
+        else { t = (n % 4) + 1; y = ((n / 4) | 0) % 64; r = Math.floor(n / 256); z = (r % 1024) - 256; x = Math.floor(r / 1024) - 256; }
+        if (t >= 1 && t <= 6) W.setVox(x, y, z, t, hp != null ? hp : HP[t]);
       });
     };
     W.resetWorld = function (newSeed) {
-      vox.clear(); vkeys[1].length = 0; vkeys[2].length = 0; vkeys[3].length = 0; vcount = 0;
-      [1, 2, 3].forEach(function (t) { VM[t].count = 0; VM[t].instanceMatrix.needsUpdate = true; });
-      W.furn.forEach(function (f) { f.alive = false; }); W.furn.length = 0;
+      vox.clear(); [1, 2, 3, 4, 5, 6].forEach(function (t) { vkeys[t].length = 0; VM[t].count = 0; VM[t].instanceMatrix.needsUpdate = true; });
+      vcount = 0; W.bents.forEach(function (e) { e.alive = false; }); W.bents.length = 0; W.furn.length = 0; W.sinks.length = 0;
       sgrid.forEach(function (l) { for (var i = l.length - 1; i >= 0; i--) if (l[i].dyn) l.splice(i, 1); });
       egrid.forEach(function (l) { for (var i = l.length - 1; i >= 0; i--) if (l[i].dyn) l.splice(i, 1); });
       W.ents = W.ents.filter(function (e) { return !e.dyn; });
-      W.trees.length = 0; W.rocks.length = 0; W.piles.length = 0;
-      W.crates.length = staticCrateCount;
+      W.trees.length = 0; W.rocks.length = 0; W.piles.length = 0; W.crates.length = staticCrateCount;
       for (var ci = 0; ci < staticCrateCount; ci++) { W.crates[ci].respawn = 0; W.setCrate(W.crates[ci], true); }
       trunkM.count = crownM.count = rockM.count = pileM.count = shineM.count = 0;
       crateM.count = lidM.count = staticCrateCount;

@@ -1,4 +1,4 @@
-/* Webzombite-Lite - Audio: Sampel CC0 1.0 (Kenney.nl) + Web Audio Foley Synthesizer */
+/* AWAL sound.js - Webzombite-Lite */
 (function (WZ) {
   'use strict';
 
@@ -129,6 +129,12 @@
     } else if (name === 'craft') {
       sample('craft', 0.5, 1.1);
       tone(440, 880, 0.16, 'triangle', 0.24);
+    } else if (name === 'wash') {
+      noise(0.22, 1650, 'bandpass', 0.28, 1.4);
+      tone(420, 760, 0.14, 'sine', 0.18);
+    } else if (name === 'heal') {
+      tone(520, 780, 0.16, 'sine', 0.24);
+      setTimeout(function () { tone(780, 1040, 0.22, 'sine', 0.22); }, 90);
     } else if (name === 'eat') {
       noise(0.11, 1450, 'bandpass', 0.22, 2.2);
       tone(210, 130, 0.09, 'triangle', 0.14);
@@ -148,7 +154,6 @@
     }
   }
 
-  /* Suasana alam ringan (angin siang / jangkrik malam) */
   setInterval(function () {
     if (!AC || muted || AC.state !== 'running') return;
     if (isNight) {
@@ -173,3 +178,4 @@
     isMuted: function () { return muted; }
   };
 })(window.WZ);
+/* AKHIR sound.js */
