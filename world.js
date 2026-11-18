@@ -1,4 +1,4 @@
-/* AWAL world.js - Webzombite-Lite (Tekstur Tajam + Siklus Pagi/Siang/Sore/Malam) */
+/* AWAL world.js - Webzombite-Lite (Random Nature Spawn + Rumah Lootable Bervariasi) */
 (function (WZ) {
   'use strict';
   WZ.HALF = 250; WZ.SPAWN_HALF = 262.5;
@@ -10,17 +10,19 @@
       return ((t ^ t >>> 14) >>> 0) / 4294967296;
     };
   }
-  WZ.createWorld = function (THREE, scene, maxAniso) {
+  function rndSeed() { return ((Math.random() * 0x7fffffff) | 0) || 123456; }
+
+  WZ.createWorld = function (THREE, scene, maxAniso, initSeed) {
     var R = mulberry(20261116), ANISO = Math.min(4, maxAniso || 4);
-    function rr(a, b) { return a + R() * (b - a); }
-    function pick(a) { return a[(R() * a.length) | 0]; }
-    var W = { half: WZ.HALF, ents: [], trees: [], rocks: [], piles: [], crates: [], furn: [], rects: [], roads: [], spawn: { x: -32, y: 0, z: 32 } };
+    function rr(a, b, rng) { return a + (rng || R)() * (b - a); }
+    function pick(a, rng) { var fn = rng || R; return a[(fn() * a.length) | 0]; }
+    var W = { half: WZ.HALF, ents: [], trees: [], rocks: [], piles: [], crates: [], furn: [], rects: [], roads: [], spawn: { x: -32, y: 0, z: 32 }, seed: 0 };
     var ROADS = [-224, -160, -96, -32, 32, 96, 160, 224], RW = 10; W.roads = ROADS;
 
     var CELL = 8, sgrid = new Map();
     function ck(cx, cz) { return (cx + 80) * 256 + (cz + 80); }
-    function addBox(x0, x1, y0, y1, z0, z1) {
-      var b = { x0: x0, x1: x1, y0: y0, y1: y1, z0: z0, z1: z1, on: true };
+    function addBox(x0, x1, y0, y1, z0, z1, isDyn) {
+      var b = { x0: x0, x1: x1, y0: y0, y1: y1, z0: z0, z1: z1, on: true, dyn: !!isDyn };
       for (var cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx++) for (var cz = Math.floor(z0 / CELL); cz <= Math.floor(z1 / CELL); cz++) {
         var k = ck(cx, cz), l = sgrid.get(k); if (!l) { l = []; sgrid.set(k, l); } l.push(b);
       }
@@ -58,7 +60,7 @@
       var m = new THREE.InstancedMesh(geo, mat, cap); m.count = 0; m.frustumCulled = false;
       var u = isDyn ? THREE.DynamicDrawUsage : THREE.StaticDrawUsage;
       if (m.instanceMatrix && m.instanceMatrix.setUsage) m.instanceMatrix.setUsage(u);
-      m.setColorAt(0, C.set(0xffffff));
+      m.setColorAt(0, C.setHex(0xffffff));
       if (m.instanceColor) { m.instanceColor.array.fill(1); if (m.instanceColor.setUsage) m.instanceColor.setUsage(u); }
       scene.add(m); return m;
     }
@@ -66,7 +68,7 @@
       var cap = m.instanceMatrix.count, i = at == null ? m.count : at;
       if (i >= cap) return cap - 1; if (at == null) m.count++;
       P.set(x, y, z); S.set(sx, sy, sz); Q.setFromAxisAngle(UP, ry || 0); Mx.compose(P, Q, S);
-      m.setMatrixAt(i, Mx); if (col != null) m.setColorAt(i, C.set(col));
+      m.setMatrixAt(i, Mx); if (col != null) m.setColorAt(i, C.setHex(col));
       m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; return i;
     }
     W.put = put;
@@ -84,27 +86,27 @@
       var r = mulberry(seed);
       return canvasTex(128, 128, function (g, w, h) {
         g.fillStyle = base; g.fillRect(0, 0, w, h);
-        for (var y = 0; y < h; y += 16) { g.fillStyle = 'rgba(0,0,0,.14)'; g.fillRect(0, y, w, 1); g.fillStyle = 'rgba(255,255,255,.08)'; g.fillRect(0, y + 1, w, 1); }
-        for (var i = 0; i < 320; i++) { g.fillStyle = r() < 0.5 ? 'rgba(0,0,0,.12)' : 'rgba(255,255,255,.07)'; g.fillRect(r() * w, r() * h, 2 + r() * 8, 1 + r() * 4); }
+        for (var y = 0; y < h; y += 16) { g.fillStyle = 'rgba(0,0,0,.12)'; g.fillRect(0, y, w, 1); g.fillStyle = 'rgba(255,255,255,.08)'; g.fillRect(0, y + 1, w, 1); }
+        for (var i = 0; i < 300; i++) { g.fillStyle = r() < 0.5 ? 'rgba(0,0,0,.1)' : 'rgba(255,255,255,.08)'; g.fillRect(r() * w, r() * h, 2 + r() * 8, 1 + r() * 4); }
         for (var fy = 0; fy < 2; fy++) for (var fx = 0; fx < 2; fx++) {
           var x = fx * 64 + 13, wy = fy * 64 + 9, k = r();
-          g.fillStyle = '#242220'; g.fillRect(x - 2, wy - 2, 40, 48);
-          g.fillStyle = k < 0.18 ? '#59422f' : k < 0.32 ? '#1a232a' : '#2e4554'; g.fillRect(x, wy, 36, 44);
-          if (k < 0.18) { g.strokeStyle = '#2d1e12'; g.lineWidth = 3; for (var j = 0; j < 4; j++) { g.beginPath(); g.moveTo(x, wy + j * 11 + 4); g.lineTo(x + 36, wy + j * 11 + 9); g.stroke(); } }
-          else { g.fillStyle = 'rgba(180,220,245,.22)'; g.fillRect(x + 3, wy + 3, 12, 34); g.fillStyle = '#1b1d1e'; g.fillRect(x + 17, wy, 2, 44); g.fillRect(x, wy + 21, 36, 2); }
-          g.fillStyle = 'rgba(255,255,255,.2)'; g.fillRect(x - 2, wy + 44, 40, 3);
+          g.fillStyle = '#33302c'; g.fillRect(x - 2, wy - 2, 40, 48);
+          g.fillStyle = k < 0.18 ? '#694e37' : k < 0.32 ? '#23303a' : '#375469'; g.fillRect(x, wy, 36, 44);
+          if (k < 0.18) { g.strokeStyle = '#362416'; g.lineWidth = 3; for (var j = 0; j < 4; j++) { g.beginPath(); g.moveTo(x, wy + j * 11 + 4); g.lineTo(x + 36, wy + j * 11 + 9); g.stroke(); } }
+          else { g.fillStyle = 'rgba(195,230,255,.25)'; g.fillRect(x + 3, wy + 3, 12, 34); g.fillStyle = '#25282b'; g.fillRect(x + 17, wy, 2, 44); g.fillRect(x, wy + 21, 36, 2); }
+          g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(x - 2, wy + 44, 40, 3);
         }
       });
     }
-    var FACADE_MATS = [['#9e9a91', 11], ['#a89e90', 12], ['#878e96', 13], ['#9e8b7c', 14], ['#7c858a', 15], ['#b2a896', 16]].map(function (a) { return lam(0xffffff, { map: facadeTex(a[0], a[1]) }); });
+    var FACADE_MATS = [['#a8a49b', 11], ['#b3a89a', 12], ['#929aa3', 13], ['#ab9687', 14], ['#899399', 15], ['#bdb29f', 16]].map(function (a) { return lam(0xffffff, { map: facadeTex(a[0], a[1]) }); });
     var groundTex = canvasTex(256, 256, function (g, w, h) {
       var r = mulberry(5); g.fillStyle = '#5c6142'; g.fillRect(0, 0, w, h);
       for (var i = 0; i < 2200; i++) { var v = (r() * 48) | 0; g.fillStyle = r() < 0.3 ? 'rgba(65,55,38,.45)' : 'rgba(' + (72 + v) + ',' + (84 + v) + ',' + (45 + (v >> 1)) + ',.7)'; g.fillRect(r() * w, r() * h, 1 + r() * 3, 1 + r() * 5); }
       for (var j = 0; j < 260; j++) { g.fillStyle = '#737d4b'; g.fillRect(r() * w, r() * h, 1, 4 + r() * 4); }
     }); groundTex.repeat.set(130, 130);
     var roadTex = canvasTex(128, 128, function (g, w, h) {
-      var r = mulberry(6); g.fillStyle = '#383b40'; g.fillRect(0, 0, w, h);
-      for (var i = 0; i < 1600; i++) { var v = (r() * 42) | 0; g.fillStyle = 'rgba(' + (42 + v) + ',' + (45 + v) + ',' + (50 + v) + ',.75)'; g.fillRect(r() * w, r() * h, 1 + r() * 2, 1 + r() * 2); }
+      var r = mulberry(6); g.fillStyle = '#3a3d42'; g.fillRect(0, 0, w, h);
+      for (var i = 0; i < 1600; i++) { var v = (r() * 42) | 0; g.fillStyle = 'rgba(' + (44 + v) + ',' + (47 + v) + ',' + (52 + v) + ',.75)'; g.fillRect(r() * w, r() * h, 1 + r() * 2, 1 + r() * 2); }
       g.strokeStyle = 'rgba(12,12,14,.8)'; g.lineWidth = 1.2; for (var k = 0; k < 5; k++) { g.beginPath(); var sx = r() * w; g.moveTo(sx, 0); g.lineTo(sx + (r() - 0.5) * 18, h * 0.5); g.lineTo(sx + (r() - 0.5) * 24, h); g.stroke(); }
     });
     var plankTex = canvasTex(128, 128, function (g, w, h) {
@@ -124,8 +126,7 @@
         for (var col = -1; col < 3; col++) {
           var x = col * 64 + off, sh = 128 + ((r() * 34) | 0);
           g.fillStyle = 'rgb(' + sh + ',' + (sh + 2) + ',' + (sh + 6) + ')'; g.fillRect(x + 2, y + 2, 60, 28);
-          g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(x + 2, y + 2, 60, 3);
-          g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(x + 2, y + 27, 60, 3);
+          g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(x + 2, y + 2, 60, 3); g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(x + 2, y + 27, 60, 3);
         }
       }
       for (var i = 0; i < 350; i++) { g.fillStyle = r() < 0.5 ? 'rgba(0,0,0,.2)' : 'rgba(255,255,255,.18)'; g.fillRect(r() * w, r() * h, 2, 2); }
@@ -136,9 +137,15 @@
       g.fillStyle = '#736d68'; for (var rx = 14; rx <= 114; rx += 20) { g.fillRect(rx, 14, 4, 4); g.fillRect(rx, 110, 4, 4); }
     });
     var houseWallTex = canvasTex(128, 128, function (g, w, h) {
-      var r = mulberry(9); g.fillStyle = '#dad5cc'; g.fillRect(0, 0, w, h);
-      for (var i = 0; i < 420; i++) { g.fillStyle = r() < 0.5 ? 'rgba(0,0,0,.11)' : 'rgba(255,255,255,.12)'; g.fillRect(r() * w, r() * h, 2 + r() * 6, 2 + r() * 4); }
-      g.fillStyle = 'rgba(0,0,0,.12)'; for (var y = 0; y < h; y += 32) g.fillRect(0, y, w, 1);
+      var r = mulberry(9); g.fillStyle = '#f2eee6'; g.fillRect(0, 0, w, h);
+      for (var y = 0; y < h; y += 16) { g.fillStyle = 'rgba(0,0,0,.1)'; g.fillRect(0, y, w, 2); g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(0, y + 2, w, 2); }
+      for (var i = 0; i < 360; i++) { g.fillStyle = r() < 0.5 ? 'rgba(0,0,0,.07)' : 'rgba(255,255,255,.12)'; g.fillRect(r() * w, r() * h, 2 + r() * 5, 2 + r() * 3); }
+    });
+    var winTex = canvasTex(64, 64, function (g, w, h) {
+      g.fillStyle = '#f2ede2'; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#4a6b82'; g.fillRect(7, 7, w - 14, h - 14);
+      g.fillStyle = 'rgba(210,240,255,.32)'; g.fillRect(10, 10, 18, h - 22);
+      g.fillStyle = '#e5dfd2'; g.fillRect(w / 2 - 2, 5, 4, h - 10); g.fillRect(5, h / 2 - 2, w - 10, 4);
     });
     var barkTex = canvasTex(64, 64, function (g, w, h) {
       var r = mulberry(10); g.fillStyle = '#6b4d30'; g.fillRect(0, 0, w, h);
@@ -185,7 +192,7 @@
     function inOcc(x, z, m) { for (var i = 0; i < occupied.length; i++) { var o = occupied[i]; if (x > o[0] - m && x < o[1] + m && z > o[2] - m && z < o[3] + m) return true; } return false; }
     function zoneOf(x, z) { var d = Math.hypot(x, z); return d < 105 ? 'down' : d < 190 ? 'mid' : 'out'; }
 
-    var walls = inst(box1, lam(0xffffff, { map: houseWallTex }), 2500, false), roofCols = [0x54504b, 0x615b54, 0x484d54];
+    var walls = inst(box1, lam(0xffffff, { map: houseWallTex }), 2500, false), winM = inst(box1, lam(0xffffff, { map: winTex }), 800, false), roofCols = [0x5c5751, 0x69625a, 0x51575e];
     var facadeBuckets = FACADE_MATS.map(function () { return { pos: [], norm: [], uv: [], idx: [] }; });
     var roofBucket = { pos: [], norm: [], col: [], idx: [] };
     function pushSide(bk, p0, p1, p2, p3, nx, ny, nz, ur, vr) {
@@ -202,38 +209,42 @@
       roofBucket.pos.push(x0, h, z1, x1, h, z1, x1, h, z0, x0, h, z0);
       for (var i = 0; i < 4; i++) { roofBucket.norm.push(0, 1, 0); roofBucket.col.push(rc.r, rc.g, rc.b); }
       roofBucket.idx.push(rb, rb + 1, rb + 2, rb, rb + 2, rb + 3);
-      addBox(x0, x1, 0, h, z0, z1); occupied.push([x0 - 1, x1 + 1, z0 - 1, z1 + 1]); W.rects.push({ x0: x0, x1: x1, z0: z0, z1: z1, c: '#555' });
-      if (R() < 0.6) put(walls, rr(x0 + 2, x1 - 2), h + 1, rr(z0 + 2, z1 - 2), 3, 2, 3, 0, 0x5c6166);
+      addBox(x0, x1, 0, h, z0, z1, false); occupied.push([x0 - 1, x1 + 1, z0 - 1, z1 + 1]); W.rects.push({ x0: x0, x1: x1, z0: z0, z1: z1, c: '#555' });
+      if (R() < 0.6) put(walls, rr(x0 + 2, x1 - 2), h + 1, rr(z0 + 2, z1 - 2), 3, 2, 3, 0, 0x6b7075);
     }
-    function wallSeg(x0, x1, z0, z1, y0, y1, col) { put(walls, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, x1 - x0, y1 - y0, z1 - z0, 0, col); addBox(x0, x1, y0, y1, z0, z1); }
+    function wallSeg(x0, x1, z0, z1, y0, y1, col) { put(walls, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, x1 - x0, y1 - y0, z1 - z0, 0, col); addBox(x0, x1, y0, y1, z0, z1, false); }
 
     var bedM = inst(box1, lam(0xffffff, { map: houseWallTex }), 400, false), couchM = inst(box1, lam(0xffffff, { map: houseWallTex }), 400, false);
     function addBed(x, z, clean) {
-      put(bedM, x, 0.3, z, 2.0, 0.6, 1.0, 0, clean ? 0xe5dfd0 : 0x57483d); put(bedM, x - 0.9, 0.65, z, 0.18, 0.5, 1.0, 0, clean ? 0xc89562 : 0x382e26);
-      addBox(x - 1.0, x + 1.0, 0, 0.6, z - 0.5, z + 0.5); addEnt({ k: 'bed', x: x, z: z, y: 0, r: 1.3, h: 0.8, clean: clean, alive: true });
+      put(bedM, x, 0.3, z, 2.0, 0.6, 1.0, 0, clean ? 0xe5dfd0 : 0x6e5b4d); put(bedM, x - 0.9, 0.65, z, 0.18, 0.5, 1.0, 0, clean ? 0xc89562 : 0x4a3d33);
+      addBox(x - 1.0, x + 1.0, 0, 0.6, z - 0.5, z + 0.5, false); addEnt({ k: 'bed', x: x, z: z, y: 0, r: 1.3, h: 0.8, clean: clean, alive: true, dyn: false });
     }
     function addCouch(x, z, clean) {
-      put(couchM, x, 0.3, z, 1.9, 0.6, 0.9, 0, clean ? 0x7b996d : 0x4a4036); put(couchM, x, 0.75, z - 0.38, 1.9, 0.6, 0.2, 0, clean ? 0x5f7d52 : 0x332b24);
-      addBox(x - 0.95, x + 0.95, 0, 0.6, z - 0.45, z + 0.45); addEnt({ k: 'couch', x: x, z: z, y: 0, r: 1.15, h: 0.9, clean: clean, alive: true });
+      put(couchM, x, 0.3, z, 1.9, 0.6, 0.9, 0, clean ? 0x7b996d : 0x5c4f43); put(couchM, x, 0.75, z - 0.38, 1.9, 0.6, 0.2, 0, clean ? 0x5f7d52 : 0x453b31);
+      addBox(x - 0.95, x + 0.95, 0, 0.6, z - 0.45, z + 0.45, false); addEnt({ k: 'couch', x: x, z: z, y: 0, r: 1.15, h: 0.9, clean: clean, alive: true, dyn: false });
     }
+
+    var HOUSE_COLS = [0xe8dcc4, 0xd47a66, 0x88b394, 0x7da4c4, 0xdeb664, 0xd19464, 0xcfd4d9, 0xba8b5e];
+    var HOUSE_ROOFS = [0x8a4b3e, 0x526575, 0x6b6358, 0x546b4d, 0x7a5b40];
     function house(px, pz, face) {
       var hw = rr(12, 15), hd = rr(10, 12), x0 = px - hw / 2, x1 = px + hw / 2, z0 = pz - hd / 2, z1 = pz + hd / 2, t = 0.4, H = 3.2;
-      var col = pick([0xc7ba9f, 0xb3a895, 0xaa9c92, 0xcac0ae, 0xa19688]); occupied.push([x0 - 1, x1 + 1, z0 - 1, z1 + 1]); W.rects.push({ x0: x0, x1: x1, z0: z0, z1: z1, c: '#7a6f60' });
+      var col = pick(HOUSE_COLS), roofCol = pick(HOUSE_ROOFS);
+      occupied.push([x0 - 1, x1 + 1, z0 - 1, z1 + 1]); W.rects.push({ x0: x0, x1: x1, z0: z0, z1: z1, c: '#' + ('000000' + col.toString(16)).slice(-6) });
       var dx = (x0 + x1) / 2 + rr(-hw / 4, hw / 4), dz = (z0 + z1) / 2 + rr(-hd / 4, hd / 4), gap = 1.0;
       [[z0, 'n'], [z1, 's']].forEach(function (s) {
-        if (face === s[1]) { wallSeg(x0, dx - gap, s[0] - t / 2, s[0] + t / 2, 0, H, col); wallSeg(dx + gap, x1, s[0] - t / 2, s[0] + t / 2, 0, H, col); wallSeg(dx - gap, dx + gap, s[0] - t / 2, s[0] + t / 2, 2.4, H, col); }
-        else wallSeg(x0, x1, s[0] - t / 2, s[0] + t / 2, 0, H, col);
+        if (face === s[1]) { wallSeg(x0, dx - gap, s[0] - t / 2, s[0] + t / 2, 0, H, col); wallSeg(dx + gap, x1, s[0] - t / 2, s[0] + t / 2, 0, H, col); wallSeg(dx - gap, dx + gap, s[0] - t / 2, s[0] + t / 2, 2.4, H, roofCol); }
+        else { wallSeg(x0, x1, s[0] - t / 2, s[0] + t / 2, 0, H, col); put(winM, (x0 + x1) / 2 - hw * 0.25, 1.65, s[0], 1.5, 1.1, t + 0.06, 0, null); put(winM, (x0 + x1) / 2 + hw * 0.25, 1.65, s[0], 1.5, 1.1, t + 0.06, 0, null); }
       });
       [[x0, 'w'], [x1, 'e']].forEach(function (s) {
-        if (face === s[1]) { wallSeg(s[0] - t / 2, s[0] + t / 2, z0 + t / 2, dz - gap, 0, H, col); wallSeg(s[0] - t / 2, s[0] + t / 2, dz + gap, z1 - t / 2, 0, H, col); wallSeg(s[0] - t / 2, s[0] + t / 2, dz - gap, dz + gap, 2.4, H, col); }
-        else wallSeg(s[0] - t / 2, s[0] + t / 2, z0 + t / 2, z1 - t / 2, 0, H, col);
+        if (face === s[1]) { wallSeg(s[0] - t / 2, s[0] + t / 2, z0 + t / 2, dz - gap, 0, H, col); wallSeg(s[0] - t / 2, s[0] + t / 2, dz + gap, z1 - t / 2, 0, H, col); wallSeg(s[0] - t / 2, s[0] + t / 2, dz - gap, dz + gap, 2.4, H, roofCol); }
+        else { wallSeg(s[0] - t / 2, s[0] + t / 2, z0 + t / 2, z1 - t / 2, 0, H, col); put(winM, s[0], 1.65, (z0 + z1) / 2, t + 0.06, 1.1, 1.5, 0, null); }
       });
-      wallSeg(x0, x1, z0, z1, H, H + 0.4, 0x5c5650);
+      wallSeg(x0 - 0.15, x1 + 0.15, z0 - 0.15, z1 + 0.15, H, H + 0.42, roofCol);
       var cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, back = face === 'n' ? 1 : face === 's' ? -1 : 0, backx = face === 'w' ? 1 : face === 'e' ? -1 : 0;
       var bx = cx + (backx ? backx * (hw / 2 - 1.6) : -hw / 4), bz = cz + (back ? back * (hd / 2 - 1.2) : -hd / 4); addBed(bx, bz, R() < 0.5);
       var kx = cx + (backx ? backx * (hw / 2 - 1.2) : hw / 4), kz = cz + (back ? back * (hd / 2 - 1.2) : hd / 4) + (backx ? 3 : 0);
       if (backx || back) addCouch(kx + (backx ? 0 : 1), kz, R() < 0.5);
-      if (R() < 0.6) { var crx = cx + rr(-hw / 4, hw / 4), crz = cz + rr(-hd / 5, hd / 5); if (Math.hypot(crx - bx, crz - bz) > 1.8) addCrate(crx, crz); }
+      if (R() < 0.6) { var crx = cx + rr(-hw / 4, hw / 4), crz = cz + rr(-hd / 5, hd / 5); if (Math.hypot(crx - bx, crz - bz) > 1.8) addCrate(crx, crz, false); }
     }
 
     var egrid = new Map();
@@ -255,10 +266,10 @@
       put(trunkM, t.x, 0, t.z, 1.2 * t.s, t.th, 1.2 * t.s, t.ry, null, t.ix); put(crownM, t.x, t.th * 0.62, t.z, 2.6 * t.s, 3.4 * t.s, 2.6 * t.s, t.ry, t.cc, t.ix);
     }
     W.setTree = function (t, on) { treeMat(t, on); t.box.on = on; t.alive = on; };
-    function addTree(x, z) {
-      var s = Math.pow(R(), 1.6) * 1.5 + 0.7, th = 3.0 * s;
-      var t = { k: 'tree', idx: W.trees.length, x: x, z: z, y: 0, s: s, th: th, ry: R() * 6.28, r: 0.55 * s + 0.15, h: th * 0.62 + 3.4 * s, alive: true, max: Math.round(34 * s * s), hp: 0, yield: Math.round(3 + 5.2 * s * s), given: 0, respawn: 0, cc: pick([0x4c6e3d, 0x577c43, 0x426137, 0x677a43, 0x736d43]) };
-      t.hp = t.max; t.ix = trunkM.count; trunkM.count++; crownM.count++; t.box = addBox(x - 0.3 * s, x + 0.3 * s, 0, th, z - 0.3 * s, z + 0.3 * s);
+    function addTree(x, z, rng) {
+      var s = Math.pow(rng(), 1.6) * 1.5 + 0.7, th = 3.0 * s;
+      var t = { k: 'tree', idx: W.trees.length, x: x, z: z, y: 0, s: s, th: th, ry: rng() * 6.28, r: 0.55 * s + 0.15, h: th * 0.62 + 3.4 * s, alive: true, dyn: true, max: Math.round(34 * s * s), hp: 0, yield: Math.round(3 + 5.2 * s * s), given: 0, respawn: 0, cc: pick([0x4c6e3d, 0x577c43, 0x426137, 0x677a43, 0x736d43], rng) };
+      t.hp = t.max; t.ix = trunkM.count; trunkM.count++; crownM.count++; t.box = addBox(x - 0.3 * s, x + 0.3 * s, 0, th, z - 0.3 * s, z + 0.3 * s, true);
       treeMat(t, true); addEnt(t); W.trees.push(t);
     }
 
@@ -268,31 +279,32 @@
       else put(rockM, t.x, 0.55 * t.s, t.z, 1.15 * t.s, 0.8 * t.s, 1.0 * t.s, t.ry, t.cc, t.ix);
       t.box.on = on; t.alive = on;
     };
-    function addRock(x, z, ore) {
-      var s = rr(0.8, 2.1), t = { k: 'rock', idx: W.rocks.length, ore: ore, x: x, z: z, y: 0, s: s, ry: R() * 6.28, r: 0.95 * s, h: 1.5 * s, alive: true, max: Math.round((ore ? 100 : 60) * s * s), yield: ore ? Math.round(2 + 4 * s * s) : Math.round(4 + 6 * s * s), given: 0, respawn: 0, cc: ore ? 0xb37044 : 0x8d9198 };
-      t.hp = t.max; t.ix = rockM.count++; t.box = addBox(x - 0.8 * s, x + 0.8 * s, 0, 1.2 * s, z - 0.8 * s, z + 0.8 * s);
+    function addRock(x, z, ore, rng) {
+      var s = rr(0.8, 2.1, rng), t = { k: 'rock', idx: W.rocks.length, ore: ore, x: x, z: z, y: 0, s: s, ry: rng() * 6.28, r: 0.95 * s, h: 1.5 * s, alive: true, dyn: true, max: Math.round((ore ? 100 : 60) * s * s), yield: ore ? Math.round(2 + 4 * s * s) : Math.round(4 + 6 * s * s), given: 0, respawn: 0, cc: ore ? 0xb37044 : 0x8d9198 };
+      t.hp = t.max; t.ix = rockM.count++; t.box = addBox(x - 0.8 * s, x + 0.8 * s, 0, 1.2 * s, z - 0.8 * s, z + 0.8 * s, true);
       W.setRock(t, true); addEnt(t); W.rocks.push(t);
     }
 
     var pileM = inst(box1, lam(0xffffff, { map: houseWallTex }), 2800, true), shineM = inst(box1, lam(0xffffff), 1000, true);
     W.setPile = function (p, full) { var k = full ? 1 : 0.3; p.parts.forEach(function (q) { put(q.m, p.x + q.dx, q.y * k, p.z + q.dz, q.sx, q.sy * k, q.sz, q.ry, q.col, q.i); }); p.searched = !full; };
-    function addPile(x, z, tier) {
-      var p = { k: 'pile', idx: W.piles.length, tier: tier, x: x, z: z, y: 0, r: 0.9, h: 0.9, alive: true, searched: false, respawn: 0, parts: [] };
+    function addPile(x, z, tier, rng) {
+      var p = { k: 'pile', idx: W.piles.length, tier: tier, x: x, z: z, y: 0, r: 0.9, h: 0.9, alive: true, dyn: true, searched: false, respawn: 0, parts: [] };
       var cols = tier === 1 ? [0x6d695f, 0x7a6d5c, 0x5c5a54, 0x827868] : [0x7a7871, 0x676a6e, 0x8a7d69, 0x5e5d59];
-      for (var i = 0; i < 5; i++) { var q = { m: pileM, dx: rr(-0.5, 0.5), dz: rr(-0.5, 0.5), sx: rr(0.25, 0.7), sy: rr(0.25, 0.6), sz: rr(0.25, 0.7), ry: R() * 3, col: pick(cols) }; q.y = q.sy / 2; q.i = pileM.count++; p.parts.push(q); }
-      if (tier === 2) for (var j = 0; j < 2; j++) { var q2 = { m: shineM, dx: rr(-0.4, 0.4), dz: rr(-0.4, 0.4), sx: 0.18, sy: 0.12, sz: 0.3, ry: R() * 3, col: pick([0xdde2e8, 0xe8c468, 0xc4d0d9]) }; q2.y = rr(0.4, 0.7); q2.i = shineM.count++; p.parts.push(q2); }
+      for (var i = 0; i < 5; i++) { var q = { m: pileM, dx: rr(-0.5, 0.5, rng), dz: rr(-0.5, 0.5, rng), sx: rr(0.25, 0.7, rng), sy: rr(0.25, 0.6, rng), sz: rr(0.25, 0.7, rng), ry: rng() * 3, col: pick(cols, rng) }; q.y = q.sy / 2; q.i = pileM.count++; p.parts.push(q); }
+      if (tier === 2) for (var j = 0; j < 2; j++) { var q2 = { m: shineM, dx: rr(-0.4, 0.4, rng), dz: rr(-0.4, 0.4, rng), sx: 0.18, sy: 0.12, sz: 0.3, ry: rng() * 3, col: pick([0xdde2e8, 0xe8c468, 0xc4d0d9], rng) }; q2.y = rr(0.4, 0.7, rng); q2.i = shineM.count++; p.parts.push(q2); }
       W.setPile(p, true); addEnt(p); W.piles.push(p);
     }
 
     var crateM = inst(box1, lam(0xffffff, { map: crateTex }), 250, true), lidM = inst(box1, lam(0x4f361c), 250, true);
     W.setCrate = function (c, full) { put(crateM, c.x, full ? 0.45 : 0.3, c.z, 0.9, full ? 0.9 : 0.6, 0.9, c.ry, full ? 0xffffff : 0x8a7558, c.ix); put(lidM, c.x, full ? 0.92 : -5, c.z, 0.98, 0.1, 0.98, c.ry, null, c.ix); c.searched = !full; };
-    function addCrate(x, z) {
-      var c = { k: 'crate', idx: W.crates.length, x: x, z: z, y: 0, r: 0.75, h: 0.9, alive: true, searched: false, respawn: 0, ry: R() * 3 };
-      c.ix = crateM.count++; lidM.count++; addBox(x - 0.45, x + 0.45, 0, 0.9, z - 0.45, z + 0.45);
+    function addCrate(x, z, isDyn, rng) {
+      var fn = rng || R, c = { k: 'crate', idx: W.crates.length, x: x, z: z, y: 0, r: 0.75, h: 0.9, alive: true, dyn: !!isDyn, searched: false, respawn: 0, ry: fn() * 3 };
+      c.ix = crateM.count++; lidM.count++; addBox(x - 0.45, x + 0.45, 0, 0.9, z - 0.45, z + 0.45, !!isDyn);
       W.setCrate(c, true); addEnt(c); W.crates.push(c);
     }
-    W.addFurnaceEnt = function (x, y, z) { var e = { k: 'furnace', x: x + 0.5, z: z + 0.5, y: y, r: 0.9, h: 1, alive: true, vx: x, vy: y, vz: z }; addEnt(e); W.furn.push(e); return e; };
+    W.addFurnaceEnt = function (x, y, z) { var e = { k: 'furnace', x: x + 0.5, z: z + 0.5, y: y, r: 0.9, h: 1, alive: true, dyn: true, vx: x, vy: y, vz: z }; addEnt(e); W.furn.push(e); return e; };
 
+    /* Tata letak kota tetap (template default) */
     for (var a = 0; a <= ROADS.length; a++) for (var b = 0; b <= ROADS.length; b++) {
       var lx0 = a === 0 ? -250 : ROADS[a - 1] + RW / 2, lx1 = a === ROADS.length ? 250 : ROADS[a] - RW / 2;
       var lz0 = b === 0 ? -250 : ROADS[b - 1] + RW / 2, lz1 = b === ROADS.length ? 250 : ROADS[b] - RW / 2;
@@ -320,45 +332,47 @@
       var rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(roofBucket.pos, 3)); rg.setAttribute('normal', new THREE.Float32BufferAttribute(roofBucket.norm, 3));
       rg.setAttribute('color', new THREE.Float32BufferAttribute(roofBucket.col, 3)); rg.setIndex(roofBucket.idx); rg.computeBoundingSphere(); scene.add(new THREE.Mesh(rg, new THREE.MeshLambertMaterial({ vertexColors: true })));
     }
-
-    var tries = 0;
-    while (W.trees.length < 520 && tries++ < 20000) {
-      var tx = rr(-248, 248), tz = rr(-248, 248), edge = Math.max(Math.abs(tx), Math.abs(tz)), z0n = zoneOf(tx, tz);
-      if (R() > (edge > 229 ? 0.95 : z0n === 'out' ? 0.35 : z0n === 'mid' ? 0.12 : 0.03) || onRoad(tx, tz, 1.5) || inOcc(tx, tz, 2)) continue;
-      addTree(tx, tz);
-    }
-    var rocks = 0; tries = 0;
-    while (rocks < 150 && tries++ < 12000) {
-      var rx = rr(-246, 246), rz = rr(-246, 246);
-      if ((zoneOf(rx, rz) === 'down' && R() < 0.8) || onRoad(rx, rz, 2) || inOcc(rx, rz, 2.5)) continue;
-      addRock(rx, rz, rocks % 4 === 0); rocks++;
-    }
-    var piles = 0; tries = 0;
-    while (piles < 430 && tries++ < 30000) {
-      var side = R() < 0.5, line = pick(ROADS), off = (R() < 0.5 ? -1 : 1) * rr(RW / 2 + 0.8, RW / 2 + 3.2), along = rr(-244, 244);
-      if (R() < 0.18) off = rr(-RW / 2 + 1, RW / 2 - 1);
-      var px = side ? line + off : along, pz = side ? along : line + off;
-      if (inOcc(px, pz, 0.5) || Math.max(Math.abs(px), Math.abs(pz)) > 246) continue;
-      var zn = zoneOf(px, pz); addPile(px, pz, zn === 'down' ? 2 : zn === 'mid' ? (R() < 0.45 ? 2 : 1) : 1); piles++;
-    }
-    var cr = 0; tries = 0;
-    while (cr < 90 && tries++ < 8000) {
-      var qx = rr(-240, 240), qz = rr(-240, 240);
-      if (onRoad(qx, qz, 1) || inOcc(qx, qz, 1) || zoneOf(qx, qz) === 'down') continue;
-      addCrate(qx, qz); cr++;
-    }
-    var carBody = inst(boxB, lam(0xffffff, { map: houseWallTex }), 80, false), carTop = inst(boxB, lam(0x373b40), 80, false), cars = 0; tries = 0;
-    while (cars < 55 && tries++ < 600) {
+    var carBody = inst(boxB, lam(0xffffff, { map: houseWallTex }), 80, false), carTop = inst(boxB, lam(0x373b40), 80, false), cars = 0, cTry = 0;
+    while (cars < 55 && cTry++ < 600) {
       var vl = pick(ROADS), alongV = rr(-240, 240), lane = (R() < 0.5 ? -1 : 1) * rr(1.2, 3), horiz = R() < 0.5;
-      var cxx = horiz ? alongV : vl + lane, czz = horiz ? vl + lane : alongV, lenX = horiz ? 4.4 : 1.9, lenZ = horiz ? 1.9 : 4.4, clash = false;
-      for (var ci = 0; ci < W.ents.length && !clash; ci++) { var ee = W.ents[ci]; if (ee.k === 'pile' && Math.abs(ee.x - cxx) < 3 && Math.abs(ee.z - czz) < 3) clash = true; }
-      if (clash) continue;
+      var cxx = horiz ? alongV : vl + lane, czz = horiz ? vl + lane : alongV, lenX = horiz ? 4.4 : 1.9, lenZ = horiz ? 1.9 : 4.4;
       put(carBody, cxx, 0.25, czz, lenX, 0.9, lenZ, 0, pick([0x943636, 0x386191, 0x808036, 0x676d73, 0x9c9c94, 0x4b704b]));
       put(carTop, cxx, 1.15, czz, horiz ? 2.2 : 1.7, 0.6, horiz ? 1.7 : 2.2, 0, null);
-      addBox(cxx - lenX / 2, cxx + lenX / 2, 0, 1.75, czz - lenZ / 2, czz + lenZ / 2); cars++;
+      addBox(cxx - lenX / 2, cxx + lenX / 2, 0, 1.75, czz - lenZ / 2, czz + lenZ / 2, false); cars++;
     }
     var postM = inst(boxB, lam(0xc44230), 360, false);
     for (var pt = -250; pt <= 250; pt += 6) { put(postM, pt, 0, -250, 0.25, 1.6, 0.25, 0, null); put(postM, pt, 0, 250, 0.25, 1.6, 0.25, 0, null); put(postM, -250, 0, pt, 0.25, 1.6, 0.25, 0, null); put(postM, 250, 0, pt, 0.25, 1.6, 0.25, 0, null); }
+
+    var staticCrateCount = W.crates.length;
+    function spawnNature(seed) {
+      W.seed = seed; var Rn = mulberry(seed), tries = 0;
+      while (W.trees.length < 520 && tries++ < 20000) {
+        var tx = rr(-248, 248, Rn), tz = rr(-248, 248, Rn), edge = Math.max(Math.abs(tx), Math.abs(tz)), z0n = zoneOf(tx, tz);
+        if (Rn() > (edge > 229 ? 0.95 : z0n === 'out' ? 0.35 : z0n === 'mid' ? 0.12 : 0.03) || onRoad(tx, tz, 1.5) || inOcc(tx, tz, 2)) continue;
+        addTree(tx, tz, Rn);
+      }
+      var rocks = 0; tries = 0;
+      while (rocks < 150 && tries++ < 12000) {
+        var rx = rr(-246, 246, Rn), rz = rr(-246, 246, Rn);
+        if ((zoneOf(rx, rz) === 'down' && Rn() < 0.8) || onRoad(rx, rz, 2) || inOcc(rx, rz, 2.5)) continue;
+        addRock(rx, rz, rocks % 4 === 0, Rn); rocks++;
+      }
+      var piles = 0; tries = 0;
+      while (piles < 430 && tries++ < 30000) {
+        var side = Rn() < 0.5, line = pick(ROADS, Rn), off = (Rn() < 0.5 ? -1 : 1) * rr(RW / 2 + 0.8, RW / 2 + 3.2, Rn), along = rr(-244, 244, Rn);
+        if (Rn() < 0.18) off = rr(-RW / 2 + 1, RW / 2 - 1, Rn);
+        var px = side ? line + off : along, pz = side ? along : line + off;
+        if (inOcc(px, pz, 0.5) || Math.max(Math.abs(px), Math.abs(pz)) > 246) continue;
+        var zn = zoneOf(px, pz); addPile(px, pz, zn === 'down' ? 2 : zn === 'mid' ? (Rn() < 0.45 ? 2 : 1) : 1, Rn); piles++;
+      }
+      var cr = 0; tries = 0;
+      while (cr < 90 && tries++ < 8000) {
+        var qx = rr(-240, 240, Rn), qz = rr(-240, 240, Rn);
+        if (onRoad(qx, qz, 1) || inOcc(qx, qz, 1) || zoneOf(qx, qz) === 'down') continue;
+        addCrate(qx, qz, true, Rn); cr++;
+      }
+    }
+    spawnNature(initSeed != null ? initSeed : rndSeed());
 
     var VM = { 1: inst(box1, lam(0xffffff, { map: plankTex }), 2800, true), 2: inst(box1, lam(0xffffff, { map: stoneTex }), 2800, true), 3: inst(box1, lam(0xffffff, { map: furnTex }), 150, true) };
     var vkeys = { 1: [], 2: [], 3: [] }, vcount = 0; W.MAX_VOX = 2600;
@@ -391,19 +405,21 @@
         if (t >= 1 && t <= 3 && W.setVox(x, y, z, t, hp != null ? hp : HP[t]) && t === 3) W.addFurnaceEnt(x, y, z);
       });
     };
-    W.resetWorld = function () {
+    W.resetWorld = function (newSeed) {
       vox.clear(); vkeys[1].length = 0; vkeys[2].length = 0; vkeys[3].length = 0; vcount = 0;
       [1, 2, 3].forEach(function (t) { VM[t].count = 0; VM[t].instanceMatrix.needsUpdate = true; });
       W.furn.forEach(function (f) { f.alive = false; }); W.furn.length = 0;
-      W.ents = W.ents.filter(function (e) { return e.k !== 'furnace'; });
-      egrid.forEach(function (l) { for (var i = l.length - 1; i >= 0; i--) if (!l[i].alive && l[i].k === 'furnace') l.splice(i, 1); });
-      W.trees.forEach(function (t) { t.hp = t.max; t.given = 0; t.respawn = 0; W.setTree(t, true); });
-      W.rocks.forEach(function (t) { t.hp = t.max; t.given = 0; t.respawn = 0; W.setRock(t, true); });
-      W.piles.forEach(function (p) { p.respawn = 0; W.setPile(p, true); });
-      W.crates.forEach(function (c) { c.respawn = 0; W.setCrate(c, true); });
+      sgrid.forEach(function (l) { for (var i = l.length - 1; i >= 0; i--) if (l[i].dyn) l.splice(i, 1); });
+      egrid.forEach(function (l) { for (var i = l.length - 1; i >= 0; i--) if (l[i].dyn) l.splice(i, 1); });
+      W.ents = W.ents.filter(function (e) { return !e.dyn; });
+      W.trees.length = 0; W.rocks.length = 0; W.piles.length = 0;
+      W.crates.length = staticCrateCount;
+      for (var ci = 0; ci < staticCrateCount; ci++) { W.crates[ci].respawn = 0; W.setCrate(W.crates[ci], true); }
+      trunkM.count = crownM.count = rockM.count = pileM.count = shineM.count = 0;
+      crateM.count = lidM.count = staticCrateCount;
+      spawnNature(newSeed != null ? newSeed : rndSeed());
     };
 
-    /* ---------------- Siklus Langit Pagi - Siang - Sore - Malam ---------------- */
     var skyColor = new THREE.Color(0x88b8de), fogColor = new THREE.Color(0x9bc4e6);
     scene.background = skyColor; scene.fog = new THREE.Fog(fogColor, 34, 220);
     var hemi = new THREE.HemisphereLight(0xf2f7ff, 0x625a48, 1.3); scene.add(hemi);
@@ -415,10 +431,7 @@
     skyGrp.add(sunMesh); skyGrp.add(moonMesh);
 
     var starPos = [];
-    for (var si = 0; si < 220; si++) {
-      var th = R() * 6.283, ph = R() * 1.35 + 0.1;
-      starPos.push(Math.cos(th) * Math.cos(ph) * 232, Math.sin(ph) * 232, Math.sin(th) * Math.cos(ph) * 232);
-    }
+    for (var si = 0; si < 220; si++) { var th = R() * 6.283, ph = R() * 1.35 + 0.1; starPos.push(Math.cos(th) * Math.cos(ph) * 232, Math.sin(ph) * 232, Math.sin(th) * Math.cos(ph) * 232); }
     var starGeo = new THREE.BufferGeometry(); starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
     var starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.8, sizeAttenuation: false, transparent: true, opacity: 0, fog: false });
     skyGrp.add(new THREE.Points(starGeo, starMat));
@@ -440,19 +453,14 @@
       var h = ((hour % 24) + 24) % 24, i = 0;
       while (i < KEYS.length - 2 && h >= KEYS[i + 1][0]) i++;
       var k0 = KEYS[i], k1 = KEYS[i + 1], f = (h - k0[0]) / (k1[0] - k0[0] || 1);
-      lerpCol(skyColor, k0[1], k1[1], f); lerpCol(fogColor, k0[2], k1[2], f);
-      scene.fog.color.copy(fogColor);
-      lerpCol(hemi.color, k0[3], k1[3], f); lerpCol(hemi.groundColor, k0[4], k1[4], f);
-      hemi.intensity = k0[5] + (k1[5] - k0[5]) * f;
-      lerpCol(sun.color, k0[6], k1[6], f);
-      sun.intensity = k0[7] + (k1[7] - k0[7]) * f;
-
+      lerpCol(skyColor, k0[1], k1[1], f); lerpCol(fogColor, k0[2], k1[2], f); scene.fog.color.copy(fogColor);
+      lerpCol(hemi.color, k0[3], k1[3], f); lerpCol(hemi.groundColor, k0[4], k1[4], f); hemi.intensity = k0[5] + (k1[5] - k0[5]) * f;
+      lerpCol(sun.color, k0[6], k1[6], f); sun.intensity = k0[7] + (k1[7] - k0[7]) * f;
       var ang = ((h - 6) / 24) * Math.PI * 2, sy = Math.sin(ang) * 215, sx = Math.cos(ang) * 215, sz = 45;
       skyGrp.position.set(px || 0, 0, pz || 0);
       sunMesh.position.set(sx, sy, sz); sunMesh.visible = sy > -20;
       moonMesh.position.set(-sx, -sy, -sz); moonMesh.visible = -sy > -20;
-      if (sy >= -8) sun.position.set(sx, Math.max(15, sy), sz);
-      else sun.position.set(-sx, Math.max(25, -sy), -sz);
+      if (sy >= -8) sun.position.set(sx, Math.max(15, sy), sz); else sun.position.set(-sx, Math.max(25, -sy), -sz);
       starMat.opacity = h < 5.2 || h > 19.2 ? 0.9 : h < 6.4 ? (6.4 - h) / 1.2 * 0.9 : h > 18.0 ? (h - 18.0) / 1.2 * 0.9 : 0;
     };
     W.updateSky(7.0, -32, 32);
